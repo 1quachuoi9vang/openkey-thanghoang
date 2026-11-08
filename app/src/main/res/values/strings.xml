@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenKey</string>
+    <string name="ime_name">OpenKey Vietnamese Keyboard</string>
+    <string name="settings_title">OpenKey Settings</string>
+    <string name="subtype_vi">Tiếng Việt</string>
+    <string name="subtype_en">English</string>
+</resources>
