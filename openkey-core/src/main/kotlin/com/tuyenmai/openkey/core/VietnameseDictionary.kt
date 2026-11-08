@@ -330,20 +330,10 @@ class VietnameseDictionary private constructor() {
     fun findVietnameseSpatialMatch(rawLower: String, composedLower: String, previousWord: String? = null): String? =
         findVietnameseSpatialCandidates(rawLower, composedLower, previousWord, 1).firstOrNull()
 
-    fun findVietnameseSpatialCandidates(
-        rawLower: String,
-        composedLower: String,
-        previousWord: String? = null,
-        limit: Int = 3
-    ): List<String> {
-        if (rawLower.length < 3 || isValidVietnameseSyllable(composedLower) || isEnglishWord(rawLower) || isEnglishWord(composedLower) || keepWords.contains(rawLower)) {
-            return emptyList()
-        }
+    fun findVietnameseSpatialCandidates(rawLower: String, composedLower: String, previousWord: String? = null, limit: Int = 3): List<String> {
+        if (rawLower.length < 3 || isValidVietnameseSyllable(composedLower) || isEnglishWord(rawLower) || isEnglishWord(composedLower) || keepWords.contains(rawLower)) return emptyList()
 
-        data class CandidateMatch(
-            val syllable: String, val isFullTelex: Boolean, val isExactMatch: Boolean,
-            val isOnsetRepaired: Boolean, val isDirectZeroEdit: Boolean, val isDeletion: Boolean, val isInsertion: Boolean = false
-        )
+        data class CandidateMatch(val syllable: String, val isFullTelex: Boolean, val isExactMatch: Boolean, val isOnsetRepaired: Boolean, val isDirectZeroEdit: Boolean, val isDeletion: Boolean, val isInsertion: Boolean = false)
 
         val candidateMap = mutableMapOf<String, CandidateMatch>()
         fun lookupTelexCandidate(candKey: String): Pair<String, Boolean>? {
@@ -355,14 +345,9 @@ class VietnameseDictionary private constructor() {
             return null
         }
 
-        fun addCandidate(
-            candKey: String, isExact: Boolean, isOnsetRepaired: Boolean,
-            isDirectZeroEdit: Boolean = false, isDeletion: Boolean = false, isInsertion: Boolean = false
-        ) {
-            val res = lookupTelexCandidate(candKey) ?: return
-            val syllable = res.first
+        fun addCandidate(candKey: String, isExact: Boolean, isOnsetRepaired: Boolean, isDirectZeroEdit: Boolean = false, isDeletion: Boolean = false, isInsertion: Boolean = false) {
+            val (syllable, isFull) = lookupTelexCandidate(candKey) ?: return
             if (syllable.none { it.code > 127 }) return
-            val isFull = res.second
             val ex = candidateMap[syllable]
             candidateMap[syllable] = CandidateMatch(
                 syllable = syllable,
@@ -384,8 +369,7 @@ class VietnameseDictionary private constructor() {
         // Class 1: Exact Omitted Modifier / Fast Telex & Stored Typo
         addCandidate(rawLower, isExact = true, isOnsetRepaired = false, isDirectZeroEdit = true)
         if (canonRaw != rawLower) addCandidate(canonRaw, isExact = true, isOnsetRepaired = false, isDirectZeroEdit = true)
-        val typo = vietnameseTypoCorrections[composedLower] ?: vietnameseTypoCorrections[rawLower]
-        if (typo != null) {
+        (vietnameseTypoCorrections[composedLower] ?: vietnameseTypoCorrections[rawLower])?.let { typo ->
             candidateMap[typo] = CandidateMatch(syllable = typo, isFullTelex = true, isExactMatch = true, isOnsetRepaired = false, isDirectZeroEdit = true, isDeletion = false)
         }
 
@@ -394,8 +378,7 @@ class VietnameseDictionary private constructor() {
         for (baseStr in keysToMutate) {
             val chars = baseStr.toCharArray()
             for (i in chars.indices) {
-                val neighbors = QWERTY_NEIGHBORS[chars[i]] ?: continue
-                for (nb in neighbors) {
+                for (nb in (QWERTY_NEIGHBORS[chars[i]] ?: continue)) {
                     val mutated = chars.clone(); mutated[i] = nb
                     val candKey = String(mutated)
                     addCandidate(candKey, isExact = false, isOnsetRepaired = checkRepairedOnset(candKey))
@@ -436,11 +419,7 @@ class VietnameseDictionary private constructor() {
             val tones = setOf('s', 'f', 'r', 'x', 'j')
             val insertionKeys = "hgnrtcpmuoiaeywd"
             for (baseStr in keysToMutate) {
-                val (stem, extractedTone) = if (baseStr.isNotEmpty() && baseStr.last() in tones) {
-                    Pair(baseStr.dropLast(1), baseStr.last().toString())
-                } else {
-                    Pair(baseStr, "")
-                }
+                val (stem, extractedTone) = if (baseStr.isNotEmpty() && baseStr.last() in tones) Pair(baseStr.dropLast(1), baseStr.last().toString()) else Pair(baseStr, "")
                 for (pos in 1..stem.length) {
                     for (insChar in insertionKeys) {
                         val candKey = stem.substring(0, pos) + insChar + stem.substring(pos) + extractedTone
@@ -452,8 +431,7 @@ class VietnameseDictionary private constructor() {
 
         val prevClean = previousWord?.trim()?.lowercase() ?: ""
         val priorityMap = VietnameseDictionaryCorpus.priorityMap
-        val toneModKeys = setOf('s', 'f', 'r', 'x', 'j', 'w')
-        val rawHasToneMod = rawLower.any { it in toneModKeys }
+        val rawHasToneMod = rawLower.any { it in "sfrxjw" }
 
         val scoredCandidates = mutableListOf<Pair<String, Int>>()
         for ((syllable, match) in candidateMap) {
@@ -486,45 +464,31 @@ class VietnameseDictionary private constructor() {
         if (clean == "i") matches.add("I")
         englishContractionGrammar[clean]?.let { if (!matches.contains(it)) matches.add(it) }
         englishTypoCorrections[clean]?.let { if (!matches.contains(it)) matches.add(it) }
+        if (englishWords.contains(clean) && !matches.any { it.equals(clean, ignoreCase = true) }) matches.add(clean)
 
-        if (englishWords.contains(clean) && !matches.any { it.equals(clean, ignoreCase = true) }) {
-            matches.add(clean)
-        }
-
-        val list = englishPrefixMap[clean[0]] ?: emptyList()
-        for (w in list) {
+        for (w in (englishPrefixMap[clean[0]] ?: emptyList())) {
             if (w.startsWith(clean) && !matches.any { it.equals(w, ignoreCase = true) }) {
                 matches.add(w)
                 if (matches.size >= limit) break
             }
         }
-
         if (matches.size < limit) {
-            findEnglishTranspositionMatch(clean)?.let {
-                if (!matches.any { m -> m.equals(it, ignoreCase = true) }) matches.add(it)
-            }
+            findEnglishTranspositionMatch(clean)?.let { if (!matches.any { m -> m.equals(it, ignoreCase = true) }) matches.add(it) }
         }
 
         val result = matches.take(limit)
-        return if (rawStem.length >= 2 && rawStem.all { it.isUpperCase() }) {
-            result.map { it.uppercase() }
-        } else if (rawStem.isNotEmpty() && rawStem.first().isUpperCase()) {
-            result.map { if (it == "I" || it == "I'm") it else it.replaceFirstChar { c -> c.uppercase() } }
-        } else {
-            result
+        return when {
+            rawStem.length >= 2 && rawStem.all { it.isUpperCase() } -> result.map { it.uppercase() }
+            rawStem.isNotEmpty() && rawStem.first().isUpperCase() -> result.map { if (it == "I" || it == "I'm") it else it.replaceFirstChar { c -> c.uppercase() } }
+            else -> result
         }
     }
 
-    fun computeEnglishNextWordCandidates(previousWord: String, maxCount: Int = 3): List<String> {
-        val clean = previousWord.trim().lowercase()
-        return if (clean.isEmpty()) emptyList() else (englishNextWordBigrams[clean] ?: emptyList()).take(maxCount)
-    }
+    fun computeEnglishNextWordCandidates(previousWord: String, maxCount: Int = 3): List<String> =
+        previousWord.trim().lowercase().let { if (it.isEmpty()) emptyList() else (englishNextWordBigrams[it] ?: emptyList()).take(maxCount) }
 
-    fun isValidVietnameseSyllable(word: String): Boolean {
-        val lower = word.lowercase()
-        if (!isPhonotacticallyValidVietnameseSyllable(lower)) return false
-        return syllableSet.contains(lower)
-    }
+    fun isValidVietnameseSyllable(word: String): Boolean =
+        word.lowercase().let { isPhonotacticallyValidVietnameseSyllable(it) && syllableSet.contains(it) }
 
     fun isEnglishPriorityWord(rawAscii: String): Boolean = englishPriorityWords.contains(rawAscii.lowercase())
 

@@ -96,6 +96,7 @@ class KeyboardSessionController(
         } else {
             settingsStore.language
         }
+        VietnameseEngine.syncConfig(language = appLang)
 
         batchCoordinator.resetExpectedCursor(initialSelStart, initialSelStart >= 0)
 
@@ -336,6 +337,7 @@ class KeyboardSessionController(
                 _previousWord = ""
                 val nextLang = if (editorUiState.language == 1) 0 else 1
                 settingsStore.language = nextLang
+                VietnameseEngine.syncConfig(language = nextLang)
                 if (editorUiState.packageName.isNotBlank()) {
                     smartSwitchStore.setAppLanguage(editorUiState.packageName, nextLang)
                 }

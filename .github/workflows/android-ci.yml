@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build-and-test-android:
-    name: Build, Test & Package Android APK (Samsung Galaxy A37)
+    name: Build, Test & Package Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -46,20 +46,20 @@ jobs:
         run: ./gradlew :openkey-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
 
       - name: Prepare Named Release APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/OpenKey-Android-A37.apk
+        run: cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/OpenKey-Android.apk
 
       - name: Upload APK Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: OpenKey-Android-A37
-          path: app/build/outputs/apk/debug/OpenKey-Android-A37.apk
+          name: OpenKey-Android
+          path: app/build/outputs/apk/debug/OpenKey-Android.apk
 
       - name: Publish APK to GitHub Releases
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('OpenKey {0}', github.ref_name) || 'OpenKey Android (Samsung Galaxy A37) — Latest APK' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('OpenKey {0}', github.ref_name) || 'OpenKey Android — Latest APK' }}
           prerelease: false
           make_latest: true
-          files: app/build/outputs/apk/debug/OpenKey-Android-A37.apk
+          files: app/build/outputs/apk/debug/OpenKey-Android.apk

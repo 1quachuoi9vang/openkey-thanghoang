@@ -354,10 +354,14 @@ class ImePipelineAndContextTest {
         controller.onStartInput(EditorContext(packageName = "com.slack"))
         assertEquals(0, controller.editorUiState.language, "editorUiState.language must be 0 for com.slack")
         assertEquals(1, settingsStore.language, "settingsStore.language must remain global default (1)")
+        assertEquals(0, VietnameseEngineState.shared.vLanguage, "Engine vLanguage must sync to per-app language (0)")
+        assertEquals(LanguagePriority.ENGLISH_FIRST, VietnameseEngine.effectiveLanguagePriority())
 
         // Focus brand new app without saved language -> must default to global language 1 (VI)
         controller.onStartInput(EditorContext(packageName = "com.unknown.newapp"))
         assertEquals(1, controller.editorUiState.language, "editorUiState.language must default to global setting (1)")
         assertEquals(1, settingsStore.language, "settingsStore.language must still remain 1")
+        assertEquals(1, VietnameseEngineState.shared.vLanguage, "Engine vLanguage must sync back to global setting (1)")
+        assertEquals(LanguagePriority.VIETNAMESE_FIRST, VietnameseEngine.effectiveLanguagePriority())
     }
 }

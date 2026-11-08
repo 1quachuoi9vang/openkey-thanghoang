@@ -224,7 +224,7 @@ fun SettingsScreen(
                     color = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "Samsung Galaxy A37 One UI Edition",
+                    text = "Large-Screen One UI Edition",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -354,7 +354,7 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = ergoStrings["sectionTitle"] ?: "Galaxy A37 Size & Ergonomics",
+                    text = ergoStrings["sectionTitle"] ?: "Large-Screen Size & Ergonomics",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -893,7 +893,7 @@ fun SettingsScreen(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    text = "${aboutStrings["appName"] ?: "OpenKey Android"} — Samsung Galaxy A37 One UI Edition",
+                    text = "${aboutStrings["appName"] ?: "OpenKey Android"} — Large-Screen One UI Edition",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp
                 )

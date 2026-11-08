@@ -107,6 +107,7 @@ fun KeyboardScreen(
     val effectiveEnterLabel = if (sessionController != null) editorUiState.enterActionLabel else enterActionLabel
 
     var language by remember { mutableStateOf(settingsStore.language) }
+    val effectiveLanguage = if (sessionController != null) editorUiState.language else language
     var inputType by remember { mutableStateOf(settingsStore.inputType) }
     var oneHandedMode by remember { mutableStateOf(settingsStore.oneHandedMode) }
     var showNumberRow by remember { mutableStateOf(settingsStore.showNumberRow) }
@@ -155,7 +156,7 @@ fun KeyboardScreen(
     val layerDef = KeyboardLayoutDefinition.getLayer(
         layer = effectiveLayer,
         isShifted = isShifted || isCapsLock,
-        language = language,
+        language = effectiveLanguage,
         imeActionLabel = effectiveEnterLabel
     )
 
@@ -220,12 +221,12 @@ fun KeyboardScreen(
                 autoWordingEngine = autoWordingEngine,
                 heightDp = metrics.candidateStripHeightDp,
                 palette = palette,
-                language = language,
+                language = effectiveLanguage,
                 inputType = inputType,
                 oneHandedMode = metrics.effectiveOneHandedMode,
                 onCandidateSelected = handleCandidateSelected,
                 onLanguageToggled = {
-                    val nextLang = if (language == 1) 0 else 1
+                    val nextLang = if (effectiveLanguage == 1) 0 else 1
                     settingsStore.language = nextLang
                     VietnameseEngine.resetSession()
                     autoWordingEngine.clearCandidates()

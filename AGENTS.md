@@ -1,6 +1,6 @@
 # OpenKey Android (`openkey-thanghoang`) — Agent & Contributor Engineering Guide (`AGENTS.md`)
 
-OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Method Editor (IME) engineered in **Pure Kotlin 2.x + Jetpack Compose** for the **Samsung Galaxy A37** (`6.7"` FHD+ `1080 × 2340`, `19.5:9`, `120Hz` Super AMOLED) with 1:1 Stock Samsung One UI 6/7 Keyboard layout parity.
+OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Method Editor (IME) engineered in **Pure Kotlin 2.x + Jetpack Compose** for **modern large-screen Android phones** (`6.7"+` FHD+/QHD+ `19.5:9`–`20:9`, `120Hz` Super AMOLED; reference benchmark: **Samsung Galaxy A37** `1080 × 2340`) with 1:1 Stock Samsung One UI 6/7 Keyboard layout parity and zero proprietary vendor SDK dependencies.
 
 ---
 
@@ -8,11 +8,12 @@ OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Meth
 
 | Path | Target / Module | Description |
 | :--- | :--- | :--- |
-| `openkey-core/` | `:openkey-core` (Pure JVM Kotlin) | Zero-Android-dependency Vietnamese engine (`VietnameseEngine.kt`, `VietnameseEnginePhonotactics.kt`), bilingual auto-switch (`BilingualAutoSwitchEngine.kt`), live candidate ranking (`AutoWordingEngine.kt`), dictionary & 6-class spatial typo repair (`VietnameseDictionary.kt`), generated corpus (`VietnameseDictionaryCorpus.kt`), Samsung Galaxy A37 layout geometry (`PhoneLayoutMetrics.kt`, `KeyboardLayoutDefinition.kt`), gesture controller (`KeyboardGestureController.kt`), session controller (`KeyboardSessionController.kt`), per-app language store (`SmartSwitchStore.kt`), settings (`OpenKeySettingsStore.kt`), localization (`OpenKeyL10n.kt`), and logger (`OpenKeyLogger.kt`). |
+| `openkey-core/` | `:openkey-core` (Pure JVM Kotlin) | Zero-Android-dependency Vietnamese engine (`VietnameseEngine.kt`, `VietnameseEnginePhonotactics.kt`), bilingual auto-switch (`BilingualAutoSwitchEngine.kt`), live candidate ranking (`AutoWordingEngine.kt`), dictionary & 6-class spatial typo repair (`VietnameseDictionary.kt`), generated corpus (`VietnameseDictionaryCorpus.kt`), large-screen One UI layout geometry (`PhoneLayoutMetrics.kt`, `KeyboardLayoutDefinition.kt`), gesture controller (`KeyboardGestureController.kt`), session controller (`KeyboardSessionController.kt`), per-app language store (`SmartSwitchStore.kt`), settings (`OpenKeySettingsStore.kt`), localization (`OpenKeyL10n.kt`), and logger (`OpenKeyLogger.kt`). |
 | `app/` | `:app` (Android IME + Compose UI) | Direct-Boot-aware `OpenKeyImeService.kt`, `InputConnectionCommitter.kt`, `SystemSpellCheckerBridge.kt`, `ImeComposeLifecycleOwner.kt`, 120Hz Jetpack Compose keyboard UI (`KeyboardScreen.kt`, `CandidateStripView.kt`, `KeyButton.kt`), `SettingsActivity.kt`, and persistent signing keystore (`app/openkey-debug.keystore`). |
 | `shared-data/` | Single-Source Lexicon (`1` entry/line) | Canonical lexical data: `vietnamese_syllables.txt`, `vietnamese_priorities.tsv`, `vietnamese_compound_bigrams.tsv`, `english_words.tsv`, `english_next_word_bigrams.tsv`, and `typo_and_grammar_rules.tsv`. |
 | `scripts/sync_shared_lexicon.py` | Lexicon Code Generator | Deterministic generator (`--write`) and CI drift verifier (`--check`) that compiles `shared-data/*` into `VietnameseDictionaryCorpus.kt`. |
-| `.github/workflows/android-ci.yml` | Cloud CI/CD & APK Publisher | Runs `sync_shared_lexicon.py --check`, executes all `84` unit tests (`:openkey-core:test` + `:app:testDebugUnitTest`), builds the signed APK (`:app:assembleDebug`), and publishes `OpenKey-Android-A37.apk` to the `latest` GitHub Release on every push to `main`/`master`. |
+| `scripts/setup_remote_vm.sh` | Remote Linux VM Bootstrap | Configures `rtk`, `gh`, and JVM proxy SSL truststore (`JAVA_TOOL_OPTIONS`) on Antigravity Remote Linux VMs (`JDK 17`). |
+| `.github/workflows/android-ci.yml` | Cloud CI/CD & APK Publisher | Runs `sync_shared_lexicon.py --check`, executes all `84` unit tests (`:openkey-core:test` + `:app:testDebugUnitTest`), builds the signed APK (`:app:assembleDebug`), and publishes `OpenKey-Android.apk` to the `latest` GitHub Release on every push to `main`/`master`. |
 
 ---
 
@@ -24,18 +25,21 @@ OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Meth
      python3 scripts/sync_shared_lexicon.py --write
      python3 scripts/sync_shared_lexicon.py --check
      ```
-2. **Fast Pure-JVM Core Unit Tests (`< 2s`, `70` tests — requires ONLY JDK 21, zero Android SDK or emulator needed)**:
+2. **Fast Pure-JVM Core Unit Tests (`< 2s`, `70` tests — requires ONLY JDK 17+, zero Android SDK or emulator needed)**:
    ```bash
+   # On Antigravity Remote Linux VM, source the helper first:
+   source scripts/setup_remote_vm.sh
+
    ./gradlew :openkey-core:test --no-daemon
    ```
-3. **Full Android Unit Test Suite + Signed Samsung Galaxy A37 APK Assembly (`84` tests — requires JDK 21 + Android SDK `platforms;android-35`)**:
+3. **Full Android Unit Test Suite + Signed APK Assembly (`84` tests — requires JDK 17+ + Android SDK `platforms;android-35`)**:
    ```bash
    ./gradlew :openkey-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon
    ```
    - Local Output APK: `app/build/outputs/apk/debug/app-debug.apk`
 4. **Cloud Build & Release via GitHub Actions (Zero Local Android SDK Required)**:
    - Pushing to `origin/main` triggers `.github/workflows/android-ci.yml` on `ubuntu-latest` and publishes the updated APK to:
-     `https://github.com/1quachuoi9vang/openkey-thanghoang/releases/download/latest/OpenKey-Android-A37.apk`
+     `https://github.com/1quachuoi9vang/openkey-thanghoang/releases/download/latest/OpenKey-Android.apk`
 
 ---
 

@@ -35,7 +35,7 @@ object OpenKeyL10n {
 
     object Ergonomics : SectionStrings {
         private val vi = mapOf(
-            "sectionTitle" to "Kích thước & Công thái học Galaxy A37",
+            "sectionTitle" to "Kích thước & Công thái học màn hình lớn",
             "heightScaleTitle" to "Tỷ lệ chiều cao bàn phím",
             "bottomChinTitle" to "Đệm dưới đáy (khoảng cách điều hướng)",
             "oneHandedTitle" to "Chế độ một tay",
@@ -48,7 +48,7 @@ object OpenKeyL10n {
         )
 
         private val en = mapOf(
-            "sectionTitle" to "Galaxy A37 Size & Ergonomics",
+            "sectionTitle" to "Large-Screen Size & Ergonomics",
             "heightScaleTitle" to "Keyboard Height Scale",
             "bottomChinTitle" to "Bottom Chin Padding",
             "oneHandedTitle" to "One-Handed Mode",
