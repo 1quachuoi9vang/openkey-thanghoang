@@ -37,14 +37,14 @@ class VietnameseDictionary private constructor() {
         private val O_HORN_CHARS = setOf('ơ', 'ớ', 'ờ', 'ở', 'ỡ', 'ợ')
         private val FAKE_D_SHADOWS = setOf("dất", "dến", "diểm", "dồng", "dứng", "dể", "dữa")
         private val HALF_HORN_UO_REGEX = Regex("u[ơớờởỡợ](ng|nh|ch|[cmnptui])")
-        private val UNHORNED_UO_REGEX = Regex("^(?!(?:qu|th|h)u[ơớờởỡợ]$).*?u[ơớờởỡợ]")
+        private val UNHORNED_UO_REGEX = Regex("^(?!(?:qu|th|kh|h)u[ơớờởỡợ]$).*?u[ơớờởỡợ]")
         private val GH_NGH_INVALID = Regex("^(gh|ngh)[aăâoôơuưyáắấóốớúứýàằầòồờùừỳảẳẩỏổởủửỷãẵẫõỗỡũữỹạặậọộợụựỵ]")
         private val G_NG_INVALID = Regex("^(g(?!h|i)|ng(?!h))[eêièềìéếíẻểỉẽễĩẹệị]")
         private val K_INVALID = Regex("^k[aăâoôơuưáắấóốớúứýàằầòồờùừỳảẳẩỏổởủửỷãẵẫõỗỡũữỹạặậọộợụựỵ]|^ky[a-zà-ỹ]")
         private val C_INVALID = Regex("^c(?!h)[eêiyèềìỳéếíýẻểỉỷẽễĩỹẹệịỵ]|^chy[a-zà-ỹ]")
         private val YE_INVALID = Regex("^(?:b|ch|d|đ|g|gh|gi|h|k|kh|l|m|n|ng|ngh|nh|p|ph|r|s|t|th|tr|v|x)y[êếềểễệ]")
         private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$")
-        private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:oa|oă|oe|uê|uy|uâ)|^giu[ôâêy]")
+        private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:oa|oă|oe|uê|uy|uâ)|^giu[ôốồổỗộâấầẩẫậêếềểễệyýỳỷỹỵ]")
 
         val shared by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { VietnameseDictionary() }
         @Volatile var isPrewarmed: Boolean = false
@@ -432,11 +432,12 @@ class VietnameseDictionary private constructor() {
         val prevClean = previousWord?.trim()?.lowercase() ?: ""
         val priorityMap = VietnameseDictionaryCorpus.priorityMap
         val rawHasToneMod = rawLower.any { it in "sfrxjw" }
+        val composedInvalid = !isPhonotacticallyValidVietnameseSyllable(composedLower)
 
         val scoredCandidates = mutableListOf<Pair<String, Int>>()
         for ((syllable, match) in candidateMap) {
             val hasEvidence = match.isDirectZeroEdit || match.isExactMatch || match.isOnsetRepaired || match.isInsertion ||
-                    (prevClean.isNotEmpty() && compoundBigrams[prevClean]?.contains(syllable) == true) || rawHasToneMod ||
+                    (prevClean.isNotEmpty() && compoundBigrams[prevClean]?.contains(syllable) == true) || (rawHasToneMod && composedInvalid) ||
                     (priorityMap[syllable] ?: SpatialScoringWeights.DEFAULT_PRIORITY) >= SpatialScoringWeights.HIGH_FREQUENCY_EVIDENCE_THRESHOLD
             if (!hasEvidence) continue
 

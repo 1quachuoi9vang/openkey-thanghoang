@@ -592,4 +592,43 @@ class BilingualAutoSwitchTest {
             "Typing 'tuwnfx ' must never produce 'tưn'"
         )
     }
+
+    // 17. Issue #1 Regression: Missing Syllable Families ('xoá', 'kiểu', 'nguyệt', 'thuở', 'gì') & Spatial Over-Triggering Guard
+    @Test
+    fun testIssue1MissingSyllablesAndSpatialOverTriggering() {
+        val dict = VietnameseDictionary.shared
+
+        // 1. Fake k+ê and toned giu- non-words must be rejected
+        val fakeWords = listOf(
+            "kểu", "kễu", "kếu", "kệu", "kểm", "kển", "kểng", "kếm", "kến", "kếng",
+            "kếc", "kệp", "kệt", "kệc", "kệng", "kễm", "kễn", "kễng",
+            "giuý", "giuỳ", "giuấn", "giuần", "giuế", "giuối", "giuốn"
+        )
+        for (fake in fakeWords) {
+            assertFalse(
+                dict.isValidVietnameseSyllable(fake),
+                "Fake non-word '$fake' must not be a valid Vietnamese syllable"
+            )
+        }
+
+        // 2. Typing valid words must never be corrupted by spatial auto-correct
+        val validTypingCases = listOf(
+            "xoas " to "xoá ",
+            "xoa " to "xoa ",
+            "kieeur " to "kiểu ",
+            "kieur " to "kiểu ",
+            "nguyeetj " to "nguyệt ",
+            "nguyeenx " to "nguyễn ",
+            "thuowr " to "thuở ",
+            "gif " to "gì ",
+            "khoas " to "khoá ",
+            "thoar " to "thoả ",
+            "cuwuf " to "cừu "
+        )
+        for ((input, expected) in validTypingCases) {
+            val screen = VirtualScreen()
+            screen.typeASCII(input)
+            assertEquals(expected, screen.text, "Typing '$input' must produce '$expected' (Issue #1)")
+        }
+    }
 }
