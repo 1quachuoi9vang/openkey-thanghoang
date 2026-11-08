@@ -1,35 +1,22 @@
 # OpenKey Android — Samsung Galaxy A37 IME
 
-[![Android CI/CD](https://github.com/1quachuoi9vang/openkey-thanghoang/actions/workflows/android-ci.yml/badge.svg)](https://github.com/1quachuoi9vang/openkey-thanghoang/actions/workflows/android-ci.yml)
-[![Open in Firebase Studio](https://img.shields.io/badge/Open%20in-Firebase%20Studio-blue?logo=firebase&logoColor=white)](https://studio.firebase.google.com/import?url=https://github.com/1quachuoi9vang/openkey-thanghoang)
+[![Android CI/CD](https://github.com/1quachuoi9vang/openkey-thanghoang/actions/workflows/android-ci.yml/badge.svg)](https://github.com/1quachuoi9vang/openkey-thanghoang/actions)
 [![Download APK](https://img.shields.io/badge/Download-OpenKey--Android--A37.apk-green?logo=android&logoColor=white)](https://github.com/1quachuoi9vang/openkey-thanghoang/releases/download/latest/OpenKey-Android-A37.apk)
+[![Agent Guide](https://img.shields.io/badge/Guide-AGENTS.md-blue)](AGENTS.md)
 
-OpenKey Android is a 100% offline, privacy-first Vietnamese Input Method Editor (IME) engineered in pure Kotlin 2.x and Jetpack Compose for the **Samsung Galaxy A37** (`6.7"` FHD+ `1080 × 2340`, `19.5:9`, `120Hz` Super AMOLED) with 1:1 Stock Samsung One UI Keyboard layout parity.
-
----
-
-## ⚡ 1-Click Cloud Workspace
-
-Develop, build, test, and run the Android emulator directly in your browser with **Google Firebase Studio** (powered by Project IDX Nix environment):
-
-[![Open in Firebase Studio](https://img.shields.io/badge/Google%20Firebase%20Studio-Open%20Workspace-orange?style=for-the-badge&logo=firebase)](https://studio.firebase.google.com/import?url=https://github.com/1quachuoi9vang/openkey-thanghoang)
-
-Direct Import URL:
-```text
-https://studio.firebase.google.com/import?url=https://github.com/1quachuoi9vang/openkey-thanghoang
-```
+OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Method Editor (IME) engineered in **Pure Kotlin 2.x + Jetpack Compose** for the **Samsung Galaxy A37** (`6.7"` FHD+ `1080 × 2340`, `19.5:9`, `120Hz` Super AMOLED) with 1:1 Stock Samsung One UI 6/7 Keyboard layout parity.
 
 ---
 
-## 📦 Direct APK Download
+## 📦 Direct APK Download & CI Runs
 
-Download the pre-built, signed Samsung Galaxy A37 APK from the latest release:
-
-👉 **[Download OpenKey-Android-A37.apk](https://github.com/1quachuoi9vang/openkey-thanghoang/releases/download/latest/OpenKey-Android-A37.apk)**
+- **Download Latest Pre-built APK**: [OpenKey-Android-A37.apk](https://github.com/1quachuoi9vang/openkey-thanghoang/releases/download/latest/OpenKey-Android-A37.apk) (signed and packaged automatically on every push)
+- **GitHub Actions Pipeline Status**: [View CI/CD Workflow Runs](https://github.com/1quachuoi9vang/openkey-thanghoang/actions)
+- **Agent & Engineering Guide**: See [AGENTS.md](AGENTS.md) for full architecture invariants, single-source lexicon editing workflows, and Mac-to-Linux cross-platform test commands.
 
 ---
 
-## 🌟 Key Architecture & Highlights
+## 🌟 Key Architecture & Invariants
 
 - **100% Offline & Zero Network (`REQ-001`)**: Zero network permissions declared in `AndroidManifest.xml` (`android.permission.INTERNET` and `android.permission.ACCESS_NETWORK_STATE` are strictly forbidden). Direct-Boot aware (`android:directBootAware="true"`) using device-protected storage.
 - **Samsung Galaxy A37 Ergonomics & Geometry**: Precision keycap and gap metrics matching Samsung One UI Keyboard for 6.7" 19.5:9 120Hz displays.
@@ -51,14 +38,14 @@ To regenerate the Kotlin corpus from `shared-data/`:
 python3 scripts/sync_shared_lexicon.py --write
 ```
 
-### 2. Run Pure JVM Core Unit Tests (< 2s, requires only JDK 17/21)
+### 2. Fast Pure-JVM Core Unit Tests (< 2s, requires only JDK 21)
 ```bash
-./gradlew :openkey-core:test
+./gradlew :openkey-core:test --no-daemon
 ```
 
 ### 3. Run Full Android Unit Tests & Assemble Debug APK
 ```bash
-./gradlew :openkey-core:test :app:testDebugUnitTest :app:assembleDebug
+./gradlew :openkey-core:test :app:testDebugUnitTest :app:assembleDebug --no-daemon
 ```
 
 The resulting signed APK will be located at:
@@ -73,7 +60,8 @@ app/build/outputs/apk/debug/app-debug.apk
 ```text
 .
 ├── .github/workflows/android-ci.yml   # Automated CI/CD, tests, APK build & GitHub release
-├── .idx/dev.nix                       # Google Firebase Studio (Project IDX) configuration
+├── AGENTS.md                          # Comprehensive agent & contributor engineering guide
+├── README.md                          # Quick start and project overview
 ├── app/                               # Android IME application & Jetpack Compose UI
 │   ├── src/main/                      # OpenKeyImeService, InputConnectionCommitter, Compose UI
 │   ├── src/test/                      # Android unit tests & architectural verification
