@@ -731,5 +731,116 @@ class BilingualAutoSwitchTest {
             VietnameseEngine.syncConfig(bilingualAutoRestore = 1)
         }
     }
+
+    // 21. Phase A (A1): Backspace into previous word never deletes earlier text & multi-space preserved
+    @Test
+    fun testBackspaceIntoPreviousWordNeverDeletesEarlierTextAndMultiSpacePreserved() {
+        val s1 = VirtualScreen()
+        s1.typeASCII("I love the ")
+        s1.typeKey(VietnameseData.KEY_DELETE.toInt())
+        s1.typeChar(' ')
+        assertEquals("I love the ", s1.text, "Backspace after 'I love the ' then Space must not delete 'ove '")
+
+        val s2 = VirtualScreen()
+        s2.typeASCII("to the ")
+        s2.typeKey(VietnameseData.KEY_DELETE.toInt())
+        s2.typeChar(' ')
+        assertEquals("to the ", s2.text, "Backspace after 'to the ' then Space must not delete 'to '")
+
+        val s3 = VirtualScreen()
+        s3.typeASCII("I love the")
+        s3.typeKey(VietnameseData.KEY_DELETE.toInt())
+        s3.typeChar(' ')
+        assertEquals("I love th ", s3.text, "Backspace on 'the' -> 'th' then Space must produce 'I love th '")
+
+        val s4 = VirtualScreen()
+        s4.typeASCII("the  the ")
+        assertEquals("the  the ", s4.text, "Two spaces between 'the  the ' must not corrupt into 'tthe '")
+    }
+
+    // 22. Phase B (B1-B8, B10): ALL-CAPS/DD Vietnamese, ky/gi/quo/gin corpus, shifted digits, undo & homographs
+    @Test
+    fun testPhaseBEngineCorrectnessFixes() {
+        // B1: ALL CAPS & Title-case DD Vietnamese words
+        val capsCases = listOf(
+            "TOOI " to "TÔI ",
+            "VIEETJ NAM " to "VIỆT NAM ",
+            "DDAATS " to "ĐẤT ",
+            "Ddaats " to "Đất ",
+            "DDi " to "Đi ",
+            "DDaf Nawngx " to "Đà Nẵng "
+        )
+        for ((input, expected) in capsCases) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Caps Vietnamese '$input' must produce '$expected'")
+        }
+
+        VietnameseEngine.syncConfig(inputType = 1)
+        try {
+            val sVniCaps = VirtualScreen()
+            sVniCaps.typeASCII("VIE65T NAM ")
+            assertEquals("VIỆT NAM ", sVniCaps.text, "VNI ALL-CAPS 'VIE65T NAM ' must produce 'VIỆT NAM '")
+        } finally {
+            VietnameseEngine.syncConfig(inputType = 0)
+        }
+
+        // B2 & B3: ky/gi/quo/gin phonotactics & corpus
+        val kyGiCases = listOf(
+            "kyx " to "kỹ ",
+            "kyx thuaatj " to "kỹ thuật ",
+            "kys " to "ký ",
+            "kyf " to "kỳ ",
+            "kyr " to "kỷ ",
+            "kyj " to "kỵ ",
+            "gis " to "gí ",
+            "gif " to "gì ",
+            "gir " to "gỉ ",
+            "gix " to "gĩ ",
+            "gij " to "gị ",
+            "gifn " to "gìn ",
+            "gifn giuwx " to "gìn giữ ",
+            "quowr " to "quở "
+        )
+        for ((input, expected) in kyGiCases) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Syllable '$input' must compose to '$expected'")
+        }
+
+        // B4: Shifted-digit symbols trigger word-break restore
+        val shiftedDigitCases = listOf(
+            "test! " to "test! ",
+            "test@gmail.com " to "test@gmail.com "
+        )
+        for ((input, expected) in shiftedDigitCases) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Shifted-digit word break '$input' must produce '$expected'")
+        }
+
+        // B5, B6, B7, B8, B10: Double-key undo, Roman numerals, English words, homographs & English context
+        val otherCases = listOf(
+            "Harry " to "Harry ",
+            "password " to "password ",
+            "www.facebook.com " to "www.facebook.com ",
+            "ddd " to "dd ",
+            "tieengss " to "tieengs ",
+            "VII) " to "VII) ",
+            "hello " to "hello ",
+            "wow " to "wow ",
+            "camr own " to "cảm ơn ",
+            "mootj its " to "một ít ",
+            "its " to "ít ",
+            "this is my own " to "this is my own ",
+            "this is my room " to "this is my room "
+        )
+        for ((input, expected) in otherCases) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Input '$input' must produce '$expected'")
+        }
+    }
 }
+
 

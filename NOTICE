@@ -1,0 +1,12 @@
+OpenKey Android (openkey-thanghoang)
+Copyright (C) 2026 Contributors
+
+This project is licensed under the GNU General Public License v3.0 (GPL-3.0).
+
+Attribution & Upstream Lineage:
+Portions of the core Vietnamese Telex/VNI state machine (`VietnameseEngine.kt`,
+`VietnameseEnginePhonotactics.kt`, and `VietnameseData.kt`) are derived from and
+inspired by OpenKey for macOS:
+- Project: OpenKey (https://github.com/tuyenvm/OpenKey)
+- Author: Mai Vũ Tuyên (tuyenvm)
+- License: GNU General Public License v3.0 (GPL-3.0)

@@ -208,6 +208,17 @@ class AutoWordingEngine private constructor() {
     private var _activeCandidates: List<WordCandidate> = emptyList()
 
     var onCandidatesChanged: ((List<WordCandidate>) -> Unit)? = null
+    private val candidatesListeners = java.util.concurrent.CopyOnWriteArrayList<(List<WordCandidate>) -> Unit>()
+
+    fun addCandidatesListener(listener: (List<WordCandidate>) -> Unit) {
+        if (!candidatesListeners.contains(listener)) {
+            candidatesListeners.add(listener)
+        }
+    }
+
+    fun removeCandidatesListener(listener: (List<WordCandidate>) -> Unit) {
+        candidatesListeners.remove(listener)
+    }
 
     fun recordCandidateAcceptance(text: String) {
         val clean = text.trim().lowercase()
@@ -227,9 +238,13 @@ class AutoWordingEngine private constructor() {
             _activeCandidates = candidates
         }
         onCandidatesChanged?.invoke(candidates)
+        for (listener in candidatesListeners) {
+            listener(candidates)
+        }
     }
 
     fun clearCandidates() {
+        nextGenerationId()
         updateCandidates(emptyList())
     }
 
@@ -382,8 +397,9 @@ class AutoWordingEngine private constructor() {
             }
         }
         for (vn in vietnameseSorted) {
-            if (!vietnameseWithSpatial.contains(vn)) {
-                vietnameseWithSpatial.add(vn)
+            val formattedVn = formatCase(vn)
+            if (!vietnameseWithSpatial.contains(formattedVn)) {
+                vietnameseWithSpatial.add(formattedVn)
             }
         }
 
@@ -419,7 +435,7 @@ class AutoWordingEngine private constructor() {
                 isSpatial -> CandidateKind.CORRECTION
                 isEng -> CandidateKind.CORRECTION
                 isWrongSpelling -> CandidateKind.CORRECTION
-                stemMatches.contains(text) -> CandidateKind.STEM_COMPLETION
+                stemMatches.any { it.equals(text, ignoreCase = true) } -> CandidateKind.STEM_COMPLETION
                 else -> CandidateKind.CORRECTION
             }
             WordCandidate(id = idx, text = text, kind = kind, replaceLength = replaceLen)

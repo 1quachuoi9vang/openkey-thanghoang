@@ -255,21 +255,27 @@ class OpenKeySettingsStore(private val storage: KeyValueStorage) {
         for (line in lines) {
             val parts = line.split("\t", limit = 2)
             if (parts.size == 2) {
-                map[parts[0]] = parts[1]
+                val key = parts[0].trim().lowercase()
+                if (key.isNotEmpty()) {
+                    map[key] = parts[1]
+                }
             }
         }
         return map
     }
 
     fun setCustomShorthand(shortcut: String, expansion: String) {
+        val key = shortcut.trim().lowercase()
+        if (key.isEmpty()) return
         val current = getCustomShorthands().toMutableMap()
-        current[shortcut] = expansion
+        current[key] = expansion
         persistShorthands(current)
     }
 
     fun removeCustomShorthand(shortcut: String) {
+        val key = shortcut.trim().lowercase()
         val current = getCustomShorthands().toMutableMap()
-        current.remove(shortcut)
+        current.remove(key)
         persistShorthands(current)
     }
 

@@ -106,6 +106,10 @@ class VietnameseEngineTest {
             content.contains("android.permission.INTERNET"),
             "AndroidManifest.xml strictly MUST NOT contain android.permission.INTERNET (REQ-001)"
         )
+        assertTrue(
+            content.contains("android:allowBackup=\"false\""),
+            "AndroidManifest.xml must declare android:allowBackup=\"false\" for privacy"
+        )
     }
 
     // REQ-002: Telex syllable composition
@@ -167,6 +171,12 @@ class VietnameseEngineTest {
         val screenGioi = VirtualScreen()
         screenGioi.typeASCII("gio71i")
         assertEquals("giới", screenGioi.text)
+
+        // "co81" -> must not desynchronize and produce "coó"
+        val screenCo81 = VirtualScreen()
+        screenCo81.typeASCII("co81")
+        assertNotEquals("coó", screenCo81.text, "VNI 'co81' must not desynchronize and produce 'coó'")
+        assertEquals("co81", screenCo81.text)
     }
 
     // REQ-002, ADR-002: "giới" and gi- / qu- backward vowel boundary

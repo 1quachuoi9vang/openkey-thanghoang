@@ -3109,7 +3109,9 @@ gão
 gãu
 gãy
 gì
+gìn
 gí
+gín
 gò
 gòa
 gòi
@@ -3155,6 +3157,7 @@ găm
 găn
 găng
 gĩ
+gĩn
 gũ
 gũa
 gũi
@@ -3280,7 +3283,9 @@ gặng
 gặp
 gặt
 gỉ
+gỉn
 gị
+gịn
 gọ
 gọa
 gọc
@@ -8985,6 +8990,11 @@ quịu
 quọe
 quỏe
 quốc
+quớ
+quờ
+quở
+quỡ
+quợ
 quỳ
 quỵ
 quỵt
@@ -14360,6 +14370,7 @@ yệu
 ư
 ưa
 ưi
+ưm
 ưng
 ưu
 ươi
@@ -14643,6 +14654,7 @@ yệu
 ừ
 ừa
 ừi
+ừm
 ừng
 ừu
 ử

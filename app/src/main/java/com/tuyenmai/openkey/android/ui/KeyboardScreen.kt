@@ -477,9 +477,9 @@ private fun LiveCandidateStripHost(
                 candidates = updated
             }
         }
-        autoWordingEngine.onCandidatesChanged = listener
+        autoWordingEngine.addCandidatesListener(listener)
         onDispose {
-            autoWordingEngine.onCandidatesChanged = null
+            autoWordingEngine.removeCandidatesListener(listener)
         }
     }
 

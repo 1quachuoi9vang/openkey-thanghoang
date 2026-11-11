@@ -231,6 +231,8 @@ class KeyboardSessionController(
 
                     if (keyCode == VietnameseData.KEY_EMPTY.toInt()) {
                         _composingWord = ""
+                        VietnameseEngine.resetSession()
+                        autoWordingEngine.clearCandidates()
                         batchCoordinator.commitBatch(target, 0, charStr)
                         return true
                     }
@@ -250,6 +252,8 @@ class KeyboardSessionController(
                     return true
                 } else {
                     _composingWord = ""
+                    VietnameseEngine.resetSession()
+                    autoWordingEngine.clearCandidates()
                     batchCoordinator.commitBatch(target, 0, charStr)
                     return true
                 }

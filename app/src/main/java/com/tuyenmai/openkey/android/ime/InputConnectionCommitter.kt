@@ -37,7 +37,14 @@ class InputConnectionCommitter(
     }
 
     override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
-        return inputConnectionProvider()?.deleteSurroundingText(beforeLength, afterLength) ?: false
+        val ic = inputConnectionProvider() ?: return false
+        if (beforeLength >= 5 && afterLength == 0) {
+            val actualBefore = ic.getTextBeforeCursor(beforeLength, 0)
+            if (!actualBefore.isNullOrEmpty() && actualBefore.length < beforeLength) {
+                return ic.deleteSurroundingText(actualBefore.length, 0)
+            }
+        }
+        return ic.deleteSurroundingText(beforeLength, afterLength)
     }
 
     override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
@@ -115,7 +122,30 @@ class InputConnectionCommitter(
  */
 class SharedPreferencesKeyValueStorage(context: Context) : KeyValueStorage {
 
-    private val prefs: SharedPreferences = run {
+    companion object {
+        @Volatile
+        private var sharedStoreInstance: OpenKeySettingsStore? = null
+        private var prefChangeListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+        @Synchronized
+        fun sharedSettingsStore(context: Context): OpenKeySettingsStore {
+            val existing = sharedStoreInstance
+            if (existing != null) return existing
+            val storage = SharedPreferencesKeyValueStorage(context.applicationContext ?: context)
+            val store = OpenKeySettingsStore(storage)
+            val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                if (key != null) {
+                    store.notifyChanged(key)
+                }
+            }
+            prefChangeListener = listener
+            storage.prefs.registerOnSharedPreferenceChangeListener(listener)
+            sharedStoreInstance = store
+            return store
+        }
+    }
+
+    internal val prefs: SharedPreferences = run {
         val storageContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             try {
                 context.createDeviceProtectedStorageContext()

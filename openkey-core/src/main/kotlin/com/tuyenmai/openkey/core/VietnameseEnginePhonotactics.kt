@@ -131,6 +131,7 @@ fun VietnameseEngineState.checkSpelling(forceCheckVowel: Boolean = false) {
 }
 
 fun VietnameseEngineState.repairPhonotacticClusterIfNeeded(isInsertingMark: Boolean = false): Boolean {
+    if (AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled) return false
     val hook = phonotacticRepairHook
     if (hook != null) {
         if (index < 3) return false
@@ -793,6 +794,7 @@ fun VietnameseEngineState.handleMainKey(data: UShort, caps: Boolean) {
                             if ((data == KEY_7 && chVei == KEY_A && (if (vei - 1 >= 0) CHR(vei - 1) != KEY_U else true)) ||
                                 (data == KEY_8 && (chVei == KEY_O || chVei == KEY_U))
                             ) {
+                                isChanged = false
                                 break
                             }
                         }

@@ -37,13 +37,13 @@ class VietnameseDictionary private constructor() {
         private val O_HORN_CHARS = setOf('ơ', 'ớ', 'ờ', 'ở', 'ỡ', 'ợ')
         private val FAKE_D_SHADOWS = setOf("dất", "dến", "diểm", "dồng", "dứng", "dể", "dữa")
         private val HALF_HORN_UO_REGEX = Regex("u[ơớờởỡợ](ng|nh|ch|[cmnptui])")
-        private val UNHORNED_UO_REGEX = Regex("^(?!(?:qu|th|kh|h)u[ơớờởỡợ]$).*?u[ơớờởỡợ]")
+        private val UNHORNED_UO_REGEX = Regex("^(?!qu[ơớờởỡợ]|(?:th|kh|h)u[ơớờởỡợ]$).*?u[ơớờởỡợ]")
         private val GH_NGH_INVALID = Regex("^(gh|ngh)[aăâoôơuưyáắấóốớúứýàằầòồờùừỳảẳẩỏổởủửỷãẵẫõỗỡũữỹạặậọộợụựỵ]")
-        private val G_NG_INVALID = Regex("^(g(?!h|i)|ng(?!h))[eêièềìéếíẻểỉẽễĩẹệị]")
-        private val K_INVALID = Regex("^k[aăâoôơuưáắấóốớúứýàằầòồờùừỳảẳẩỏổởủửỷãẵẫõỗỡũữỹạặậọộợụựỵ]|^ky[a-zà-ỹ]")
+        private val G_NG_INVALID = Regex("^g[eêèềéếẻểẽễẹệ]|^ng[eêièềìéếíẻểỉẽễĩẹệị]")
+        private val K_INVALID = Regex("^k[aăâoôơuưáắấóốớúứàằầòồờùừảẳẩỏổởủửãẵẫõỗỡũữạặậọộợụự]|^ky[a-zà-ỹ]")
         private val C_INVALID = Regex("^c(?!h)[eêiyèềìỳéếíýẻểỉỷẽễĩỹẹệịỵ]|^chy[a-zà-ỹ]")
         private val YE_INVALID = Regex("^(?:b|ch|d|đ|g|gh|gi|h|k|kh|l|m|n|ng|ngh|nh|p|ph|r|s|t|th|tr|v|x)y[êếềểễệ]")
-        private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$")
+        private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|(?<=.)[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$")
         private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:oa|oă|oe|uê|uy|uâ)|^giu[ôốồổỗộâấầẩẫậêếềểễệyýỳỷỹỵ]")
 
         val shared by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { VietnameseDictionary() }
@@ -172,10 +172,10 @@ class VietnameseDictionary private constructor() {
         val ORTHO_ONSET_PAIRS: Map<String, String> = mapOf("ng" to "ngh", "g" to "gh", "gh" to "g", "ngh" to "ng", "c" to "k", "k" to "c")
 
         fun hasValidVietnameseOnset(rawLower: String): Boolean {
-            val onset = rawLower.takeWhile { it !in "aeiouy" }
+            val onset = if (rawLower.startsWith("qu")) "qu" else rawLower.takeWhile { it !in "aeiouy" }
             val rest = rawLower.drop(onset.length)
             if (onset == "ng" && (rest.startsWith("i") || rest.startsWith("e"))) return false
-            if (onset == "g" && (rest.startsWith("i") || rest.startsWith("e"))) return false
+            if (onset == "g" && rest.startsWith("e")) return false
             if ((onset == "gh" || onset == "ngh") && (rest.startsWith("a") || rest.startsWith("o") || rest.startsWith("u"))) return false
             if (onset == "c" && (rest.startsWith("i") || rest.startsWith("e") || rest.startsWith("y"))) return false
             if (onset == "k" && (rest.startsWith("a") || rest.startsWith("o") || rest.startsWith("u"))) return false

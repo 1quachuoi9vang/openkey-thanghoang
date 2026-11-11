@@ -445,55 +445,58 @@ fun KeyButton(
                     }
 
                     var pointer = down
-                    while (pointer.pressed) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == pointer.id } ?: break
+                    try {
+                        while (pointer.pressed) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == pointer.id } ?: break
 
-                        if (change.pressed != pointer.pressed) {
-                            pointer = change
-                            break
-                        }
+                            if (change.pressed != pointer.pressed) {
+                                pointer = change
+                                break
+                            }
 
-                        val dragDeltaX = change.positionChange().x
-                        if (dragDeltaX != 0f) {
-                            val deltaDp = with(density) { dragDeltaX.toDp().value }
+                            val dragDeltaX = change.positionChange().x
+                            if (dragDeltaX != 0f) {
+                                val deltaDp = with(density) { dragDeltaX.toDp().value }
 
-                            when (key.action) {
-                                is KeyAction.Space -> {
-                                    val actions = gestureController.onSpacebarDrag(deltaDp)
-                                    if (gestureController.isTrackpadActive) {
-                                        spacebarTrackpadLabel = "<  ${key.primaryLabel}  >"
-                                        for (act in actions) {
-                                            if (act is GestureAction.CursorMove) {
-                                                onMoveCursor(act.steps)
+                                when (key.action) {
+                                    is KeyAction.Space -> {
+                                        val actions = gestureController.onSpacebarDrag(deltaDp)
+                                        if (gestureController.isTrackpadActive) {
+                                            spacebarTrackpadLabel = "<  ${key.primaryLabel}  >"
+                                            for (act in actions) {
+                                                if (act is GestureAction.CursorMove) {
+                                                    onMoveCursor(act.steps)
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                is KeyAction.Backspace -> {
-                                    val actions = gestureController.onBackspaceDrag(deltaDp)
-                                    if (gestureController.isSwipeDeleteActive) {
-                                        repeatDeleteJob?.cancel()
-                                        for (act in actions) {
-                                            if (act is GestureAction.DeletePreviousWord) {
-                                                onDeleteWord()
+                                    is KeyAction.Backspace -> {
+                                        val actions = gestureController.onBackspaceDrag(deltaDp)
+                                        if (gestureController.isSwipeDeleteActive) {
+                                            repeatDeleteJob?.cancel()
+                                            for (act in actions) {
+                                                if (act is GestureAction.DeletePreviousWord) {
+                                                    onDeleteWord()
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                else -> {
-                                    if (kotlin.math.abs(dragDeltaX) > 10f) {
-                                        longPressJob?.cancel()
+                                    else -> {
+                                        if (kotlin.math.abs(dragDeltaX) > 10f) {
+                                            longPressJob?.cancel()
+                                        }
                                     }
                                 }
                             }
+                            pointer = change
                         }
-                        pointer = change
+                    } finally {
+                        isPressed = false
+                        longPressJob?.cancel()
+                        repeatDeleteJob?.cancel()
+                        spacebarTrackpadLabel = null
                     }
-
-                    isPressed = false
-                    longPressJob?.cancel()
-                    repeatDeleteJob?.cancel()
 
                     when (key.action) {
                         is KeyAction.Space -> {

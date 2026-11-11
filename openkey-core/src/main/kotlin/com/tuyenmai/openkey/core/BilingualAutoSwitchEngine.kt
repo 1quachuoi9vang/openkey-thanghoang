@@ -5,7 +5,8 @@ data class PreviousWordEntry(
     var composedString: String,
     var rawKeys: List<UInt>,
     var composedWord: List<UInt>,
-    var wasRestoredToEnglish: Boolean
+    var wasRestoredToEnglish: Boolean,
+    var trailingSpaces: Int = 1
 )
 
 data class AutoRestoreUndoSnapshot(
@@ -161,7 +162,8 @@ object BilingualAutoSwitchEngine {
     ): Boolean {
         if (state.vBilingualAutoRestore == 0 || breakKeyCode != KEY_SPACE || state.previousWords.isEmpty()) return false
         val prev = state.previousWords.last()
-        if ((prev.composedString.lowercase() == fullRawLower || prev.rawString.lowercase() == fullRawLower) &&
+        if (prev.trailingSpaces == 1 &&
+            (prev.composedString.lowercase() == fullRawLower || prev.rawString.lowercase() == fullRawLower) &&
             dict.englishDuplicateCollapseWords.contains(fullRawLower)
         ) {
             val targetWord = prev.rawString
@@ -197,7 +199,10 @@ object BilingualAutoSwitchEngine {
         isWordBreakKey: Boolean, dict: VietnameseDictionary
     ): Pair<String?, Boolean> {
         if (!isWordBreakKey || state.previousWords.isEmpty()) return Pair(null, false)
-        val prevWord = state.previousWords.last().composedString
+        if (AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled) return Pair(null, false)
+        val prevEntry = state.previousWords.last()
+        if (prevEntry.trailingSpaces != 1) return Pair(null, false)
+        val prevWord = prevEntry.composedString
         val cand1 = "${prevWord.lowercase()} $fullRawLower"
         val cand2 = "${prevWord.lowercase()} $composedLower"
         val engMatch = if (state.vBilingualAutoRestore != 0) {
@@ -259,7 +264,8 @@ object BilingualAutoSwitchEngine {
             }
         }
         val rawCapCount = fullKeys.count { (it and CAPS_MASK) != 0u }
-        if (rw == null && rawCapCount < 2 && !(breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n"))) {
+        val hasTrailingUndo = state.droppedKeys.isNotEmpty() && fullRawLower.length >= 2 && fullRawLower.last() == fullRawLower[fullRawLower.length - 2]
+        if (rw == null && rawCapCount < 2 && !hasTrailingUndo && !(breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n"))) {
             val prevWord = state.previousWords.lastOrNull()?.composedString
             val isCap = composed.firstOrNull()?.isUpperCase() == true || fullRawStr.firstOrNull()?.isUpperCase() == true
             rw = if (bilingualOn && priority == LanguagePriority.ENGLISH_FIRST) {
@@ -310,16 +316,20 @@ object BilingualAutoSwitchEngine {
         fullKeys: List<UInt>, replacementWord: String?, dict: VietnameseDictionary
     ): Pair<Boolean, List<UInt>> {
         val rawCapCount = fullKeys.count { (it and CAPS_MASK) != 0u }
+        val hasTrailingUndo = state.droppedKeys.isNotEmpty() && fullRawLower.length >= 2 && fullRawLower.last() == fullRawLower[fullRawLower.length - 2]
         if (replacementWord != null) {
             return Pair(true, stringToTargetKeys(replacementWord))
         } else if (state.vBilingualAutoRestore == 0) {
-            if (isTransformed && (!state.wordStartOk || (state.tempDisableKey && (hasAnyDiacritic || state.droppedKeys.isNotEmpty())))) {
+            if (isTransformed && (!state.wordStartOk || (state.tempDisableKey && (hasAnyDiacritic || (state.droppedKeys.isNotEmpty() && !hasTrailingUndo))))) {
                 return Pair(true, state.keyStates.slice(0 until state.stateIndex))
             }
             return Pair(false, fullKeys)
         } else if (dict.isEnglishWord(composedLower) && !hasAnyDiacritic) {
             return Pair(false, fullKeys)
         } else if (isTransformed) {
+            val isShortAllCapsToneOnlyAcronym = fullKeys.size <= 3 && state.vInputType == 0 &&
+                (0 until state.index).none { state.typingWord[it].hasCircumflexOrStroke || state.typingWord[it].hasHornOrBreve } &&
+                fullRawStr.all { it.isUpperCase() }
             val restoreKeys = when {
                 isTrailingDoubledToneEscape -> fullKeys.dropLast(1)
                 !state.wordStartOk -> fullKeys
@@ -327,11 +337,11 @@ object BilingualAutoSwitchEngine {
                 dict.englishPriorityWords.contains(fullRawLower) -> fullKeys
                 priority == LanguagePriority.ENGLISH_FIRST && dict.isEnglishWord(fullRawLower) -> fullKeys
                 dict.isEnglishWord(fullRawLower) && !dict.isValidVietnameseSyllable(composedLower) -> fullKeys
-                rawCapCount >= 2 -> fullKeys
+                rawCapCount >= 2 && (!dict.isValidVietnameseSyllable(composedLower) || isShortAllCapsToneOnlyAcronym) -> fullKeys
                 breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n") -> fullKeys
                 breakKeyCode == KEY_MINUS && fullRawLower.startsWith("w") -> fullKeys
                 state.hasDigitPrefix && !dict.isValidVietnameseSyllable(composedLower) -> fullKeys
-                state.tempDisableKey && (hasAnyDiacritic || state.droppedKeys.isNotEmpty()) -> if (dict.isEnglishWord(fullRawLower)) fullKeys else state.keyStates.slice(0 until state.stateIndex)
+                state.tempDisableKey && (hasAnyDiacritic || (state.droppedKeys.isNotEmpty() && !hasTrailingUndo)) -> if (dict.isEnglishWord(fullRawLower)) fullKeys else state.keyStates.slice(0 until state.stateIndex)
                 else -> null
             }
             if (restoreKeys != null) return Pair(true, restoreKeys)
@@ -357,15 +367,12 @@ object BilingualAutoSwitchEngine {
         var firstRewriteIdx: Int? = null
         for (idx in state.previousWords.indices) {
             val prev = state.previousWords[idx]
-            if (!prev.wasRestoredToEnglish && dict.englishLookbackStems.contains(prev.rawString.lowercase())) {
+            if (!prev.wasRestoredToEnglish && prev.trailingSpaces == 1 && dict.englishLookbackStems.contains(prev.rawString.lowercase())) {
                 val allSubsequentEnglish = ((idx + 1) until state.previousWords.size).all { subIdx ->
                     val r = state.previousWords[subIdx].rawString.lowercase()
-                    state.previousWords[subIdx].wasRestoredToEnglish || dict.isEnglishWord(r) || dict.englishLookbackStems.contains(r) || r == "a" || r == "i"
+                    state.previousWords[subIdx].trailingSpaces == 1 && (state.previousWords[subIdx].wasRestoredToEnglish || dict.isEnglishWord(r) || dict.englishLookbackStems.contains(r) || r == "a" || r == "i")
                 }
-                if (allSubsequentEnglish) {
-                    firstRewriteIdx = idx
-                    break
-                }
+                if (allSubsequentEnglish) { firstRewriteIdx = idx; break }
             }
         }
         val startIdx = firstRewriteIdx ?: return false
@@ -401,12 +408,7 @@ object BilingualAutoSwitchEngine {
         state.tempDisableKey = false
 
         val restoredStr = keysToString(curKeys)
-        state.previousWords.add(
-            PreviousWordEntry(
-                rawString = restoredStr, composedString = restoredStr,
-                rawKeys = curKeys, composedWord = curKeys, wasRestoredToEnglish = true
-            )
-        )
+        state.previousWords.add(PreviousWordEntry(rawString = restoredStr, composedString = restoredStr, rawKeys = curKeys, composedWord = curKeys, wasRestoredToEnglish = true))
         if (state.previousWords.size > 2) state.previousWords.removeAt(0)
         state.consecutiveEnglishWordCount += 2
         if (state.consecutiveEnglishWordCount >= 3) state.hookOutput.languageSwitchRequest = 0
@@ -481,8 +483,9 @@ object BilingualAutoSwitchEngine {
     ) {
         val vietnameseShorthandSet = setOf("ko", "dc", "vs", "vk", "ck", "mk", "nt", "nc", "bt", "bh", "uk", "uh", "ak", "ah")
         val isUnaccentedNonVn = !hasAnyDiacritic && composedLower.length >= 2 && !dict.isValidVietnameseSyllable(composedLower) && !vietnameseShorthandSet.contains(composedLower)
-        val isComposedEng = (dict.isEnglishWord(composedLower) && !hasAnyDiacritic && (!dict.isValidVietnameseSyllable(composedLower) || dict.englishPriorityWords.contains(composedLower))) || composed == "I" || isUnaccentedNonVn
-        val isEng = isComposedEng || (dict.isEnglishWord(fullRawLower) && !hasAnyDiacritic && (!dict.isValidVietnameseSyllable(composedLower) || dict.englishPriorityWords.contains(fullRawLower)))
+        val alreadyInEng = state.previousWords.lastOrNull()?.wasRestoredToEnglish == true || state.consecutiveEnglishWordCount > 0
+        val isComposedEng = (dict.isEnglishWord(composedLower) && !hasAnyDiacritic && (!dict.isValidVietnameseSyllable(composedLower) || dict.englishPriorityWords.contains(composedLower) || alreadyInEng)) || composed == "I" || isUnaccentedNonVn
+        val isEng = isComposedEng || (dict.isEnglishWord(fullRawLower) && !hasAnyDiacritic && (!dict.isValidVietnameseSyllable(composedLower) || dict.englishPriorityWords.contains(fullRawLower) || alreadyInEng))
         if (breakKeyCode == KEY_SPACE) {
             state.previousWords.add(
                 PreviousWordEntry(

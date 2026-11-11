@@ -144,6 +144,7 @@ class OpenKeyAndroidAppTest {
 
         // REQ-001: IME Service declaration & Direct Boot
         assertTrue("IME service must be directBootAware", manifestContent.contains("android:directBootAware=\"true\""))
+        assertTrue("Application must disable cloud backup (allowBackup=false)", manifestContent.contains("android:allowBackup=\"false\""))
         assertTrue("IME service must declare BIND_INPUT_METHOD", manifestContent.contains("android.permission.BIND_INPUT_METHOD"))
         assertTrue("IME service class must be OpenKeyImeService", manifestContent.contains(".ime.OpenKeyImeService"))
         assertTrue("Settings activity must be declared", manifestContent.contains(".settings.SettingsActivity"))
@@ -167,6 +168,12 @@ class OpenKeyAndroidAppTest {
         committer.deleteSurroundingText(2, 0)
         assertEquals(2, mockIc.deletedBefore)
         assertEquals("tiế", mockIc.committedText)
+
+        // A2: Multi-character deleteSurroundingText (>= 5) clamps to actual non-empty textBeforeCursor length
+        mockIc.textBeforeCursor = "abc"
+        mockIc.deletedBefore = 0
+        committer.deleteSurroundingText(8, 0)
+        assertEquals(3, mockIc.deletedBefore)
     }
 
     // 3. InputConnectionCommitter Cursor Movement & Word Deletion (REQ-005, REQ-008, REQ-013, ADR-013)

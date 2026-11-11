@@ -391,4 +391,97 @@ class AutoWordingEngineTest {
         assertEquals("người", nguoifCands[0].text, "Slot 1 candidate for 'nguoif' must be 'người'")
         assertEquals(CandidateKind.CORRECTION, nguoifCands[0].kind)
     }
+
+    // 10. Phase A (A3) & Phase B (B11): Candidate Casing Preservation & Generation Bump on Clear
+    @Test
+    fun testCandidateCasingPreservationAndClearGenerationBump() {
+        val engine = AutoWordingEngine.shared
+
+        val titleCands = engine.computeCurrentWordCandidates("Viet", "Viet", false, LanguagePriority.VIETNAMESE_FIRST)
+        assertTrue(titleCands.any { it.text == "Việt" }, "Candidates for 'Viet' must preserve Title Case ('Việt'), got ${titleCands.map { it.text }}")
+
+        val upperCands = engine.computeCurrentWordCandidates("VIET", "VIET", false, LanguagePriority.VIETNAMESE_FIRST)
+        assertTrue(upperCands.any { it.text == "VIỆT" }, "Candidates for 'VIET' must preserve ALL CAPS ('VIỆT'), got ${upperCands.map { it.text }}")
+
+        val genBefore = engine.currentGenerationId
+        engine.clearCandidates()
+        val genAfter = engine.currentGenerationId
+        assertTrue(genAfter > genBefore, "clearCandidates() must increment currentGenerationId to invalidate stale async tasks")
+    }
+
+    // 11. Phase B (B12) & Phase C (C2, C10): Multi-listener candidates, shorthand key normalization, variant commit reset, grammar toggle
+    @Test
+    fun testMultiCandidateListenersShorthandNormalizationAndVariantReset() {
+        val engine = AutoWordingEngine.shared
+
+        // (a) C2: Multiple candidate listeners must coexist; removing preview listener must keep IME listener active
+        var imeReceived: List<WordCandidate> = emptyList()
+        var previewReceived: List<WordCandidate> = emptyList()
+        val imeListener: (List<WordCandidate>) -> Unit = { imeReceived = it }
+        val previewListener: (List<WordCandidate>) -> Unit = { previewReceived = it }
+
+        engine.addCandidatesListener(imeListener)
+        engine.addCandidatesListener(previewListener)
+
+        val sample = listOf(WordCandidate(0, "việt", CandidateKind.STEM_COMPLETION, 4))
+        engine.updateCandidates(sample)
+        assertEquals(1, imeReceived.size)
+        assertEquals(1, previewReceived.size)
+
+        // Dispose preview listener (simulating closing SettingsActivity)
+        engine.removeCandidatesListener(previewListener)
+        val sample2 = listOf(WordCandidate(0, "nam", CandidateKind.STEM_COMPLETION, 3))
+        engine.updateCandidates(sample2)
+        assertEquals("nam", imeReceived.firstOrNull()?.text, "IME listener must still receive updates after preview listener is removed")
+        engine.removeCandidatesListener(imeListener)
+
+        // (b) C10: Uppercase shorthand keys in OpenKeySettingsStore must normalize to lowercase
+        val store = OpenKeySettingsStore(InMemoryKeyValueStorage())
+        store.setCustomShorthand("VN", "Việt Nam")
+        engine.customShorthands = store.getCustomShorthands().toMutableMap()
+        assertEquals("Việt Nam", engine.expandShorthand("vn"))
+        assertEquals("VIỆT NAM", engine.expandShorthand("VN"))
+        store.removeCustomShorthand("VN")
+        assertTrue(store.getCustomShorthands().isEmpty())
+
+        // (c) C10: Committing a long-press variant (e.g. 'ê' or '×') must reset VietnameseEngine session
+        val sb = StringBuilder()
+        val mockTarget = object : TextCommitterTarget {
+            override fun beginBatchEdit(): Boolean = true
+            override fun endBatchEdit(): Boolean = true
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                val start = (sb.length - beforeLength).coerceAtLeast(0)
+                sb.delete(start, sb.length)
+                return true
+            }
+            override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
+                sb.append(text)
+                return true
+            }
+            override fun sendKeyChar(char: Char): Boolean {
+                sb.append(char)
+                return true
+            }
+            override fun performEditorAction(actionId: Int): Boolean = true
+            override fun moveCursorBy(deltaChars: Int): Boolean = true
+            override fun deletePreviousWord(): Boolean = true
+        }
+        val controller = KeyboardSessionController(settingsStore = store, committer = mockTarget)
+        controller.onStartInput(EditorContext(inputType = InputContextEvaluator.TYPE_CLASS_TEXT, imeOptions = 0, packageName = "com.test"))
+        controller.onKeyAction(KeyAction.CommitChar("a"))
+        controller.onKeyAction(KeyAction.CommitChar("ê")) // long-press variant commit
+        controller.onKeyAction(KeyAction.CommitChar("s")) // should not put acute accent on 'a' before 'ê'
+        assertEquals("aês", sb.toString(), "Long-press variant commit must reset VietnameseEngine so subsequent 's' does not mutate earlier 'a'")
+
+        // (d) B12: grammarRepairEnabled = false must prevent phonotactic cluster repair when AutoWordingEngine is enabled
+        engine.syncConfig(isEnabled = true, grammarRepair = false, shorthandExpansion = true, candidateSuggestions = true, doubleSpacePeriod = false)
+        val sOff = VirtualScreen()
+        sOff.typeASCII("vietj")
+        assertEquals("viẹt", sOff.text, "With grammarRepairEnabled=false, mid-word phonotactic cluster repair must not auto-add circumflex on 'vietj'")
+        engine.syncConfig(isEnabled = true, grammarRepair = true, shorthandExpansion = true, candidateSuggestions = true, doubleSpacePeriod = false)
+        val sOn = VirtualScreen()
+        sOn.typeASCII("vietj")
+        assertEquals("việt", sOn.text, "With grammarRepairEnabled=true, mid-word phonotactic cluster repair must auto-add circumflex on 'vietj' -> 'việt'")
+    }
 }
+

@@ -9,7 +9,8 @@ class VietnameseEngineState {
 
         val doubleConsonantEnglishStems: Set<String> = setOf(
             "err", "corr", "curr", "sorr", "morr", "tomorr", "borr", "carr", "marr", "hurr", "worr",
-            "arr", "narr", "mirr", "terr", "horr", "occurr", "recurr", "off", "eff", "diff", "buff",
+            "arr", "narr", "mirr", "terr", "horr", "occurr", "recurr", "harr", "barr", "parr", "warr",
+            "off", "eff", "diff", "buff",
             "suff", "coff", "traff", "aff", "stiff", "cliff", "staff", "stuff", "mess", "iss", "tiss",
             "sess", "less", "poss", "pass", "ass", "press", "express", "impress", "compress", "address",
             "process", "success", "access", "assess", "discuss", "miss", "loss", "cross", "boss", "class",
@@ -370,6 +371,12 @@ class VietnameseEngineState {
             wordStartOk = !isCompSep
             checkSpelling()
         } else {
+            if (previousWords.isNotEmpty()) {
+                previousWords.removeLast()
+            }
+            if (consecutiveEnglishWordCount > 0) {
+                consecutiveEnglishWordCount--
+            }
             for (i in restored.indices) {
                 typingWord[i] = restored[i]
                 keyStates[i] = restored[i]
@@ -687,8 +694,9 @@ class VietnameseEngineState {
         }
 
         val isCompoundSeparator = (keyCode == KEY_DOT || (keyCode == KEY_MINUS && capsStatus == 1) || keyCode == KEY_SLASH || (keyCode == KEY_2 && capsStatus == 1) || (keyCode == KEY_SEMICOLON && capsStatus == 1))
+        val isShiftedDigitBreak = VietnameseData.isNumberKey(keyCode) && capsStatus == 1
 
-        if (vRestoreIfWrongSpelling != 0 && isWordBreak(false, keyCode)) {
+        if (vRestoreIfWrongSpelling != 0 && (isWordBreak(false, keyCode) || isShiftedDigitBreak)) {
             if (!tempDisableKey && vCheckSpelling != 0) {
                 checkSpelling(forceCheckVowel = true)
             }
@@ -742,6 +750,9 @@ class VietnameseEngineState {
         } else {
             hookOutput.code = HookCodeState.DO_NOTHING
             spaceCount++
+            if (previousWords.isNotEmpty()) {
+                previousWords.last().trailingSpaces = spaceCount
+            }
         }
 
         if (spaceCount == 1) {
@@ -777,6 +788,8 @@ class VietnameseEngineState {
             if (spaceCount == 0) {
                 sentenceEndedWithPunctuation = false
                 restoreLastTypingState()
+            } else if (previousWords.isNotEmpty()) {
+                previousWords.last().trailingSpaces = spaceCount
             }
         } else {
             if (stateIndex > 0) stateIndex--
@@ -879,10 +892,23 @@ class VietnameseEngineState {
             return
         }
 
+        if (vInputType == 0 && index == 1 && CHR(0) == KEY_W && tempDisableKey && keyCode == KEY_W) {
+            insertKey(KEY_W, isCaps, isCheckSpellingFlag = false)
+            insertKey(KEY_W, isCaps, isCheckSpellingFlag = false)
+            insertState(KEY_W, isCaps)
+            hookOutput.code = HookCodeState.WILL_PROCESS
+            hookOutput.backspaceCount = 0
+            hookOutput.newCharCount = 2
+            hookOutput.extCode = 3
+            hookOutput.charData[1] = GET(typingWord[1])
+            hookOutput.charData[0] = GET(typingWord[2])
+            return
+        }
+
         if (checkLiveMidWordAutoEscape(keyCode)) return
 
         // REQ-027, ADR-027: Escape Keystroke Consumption
-        if (vInputType == 0 && index > 0 && keyCode == KEY_I && CHR(index - 1) == KEY_I) {
+        if (vInputType == 0 && !isCaps && index >= 3 && keyCode == KEY_I && CHR(index - 1) == KEY_I && !typingWord[index - 1].isCaps) {
             val curComposed = getComposedWordInternal().lowercase()
             if (VietnameseDictionary.isValidVietnameseSyllable(curComposed)) {
                 hookOutput.code = HookCodeState.WILL_PROCESS
@@ -1043,12 +1069,12 @@ object VietnameseEngine {
         return VietnameseEngineState.shared.getWordContext(keyCode?.toUShort())
     }
 
-    fun effectiveLanguagePriority(): LanguagePriority {
-        return VietnameseEngineState.shared.effectiveLanguagePriority()
+    fun effectiveLanguagePriority(): LanguagePriority = VietnameseEngineState.shared.lock.withLock {
+        VietnameseEngineState.shared.effectiveLanguagePriority()
     }
 
-    fun reconstructedRawKeys(): List<UInt> {
-        return VietnameseEngineState.shared.reconstructedRawKeys()
+    fun reconstructedRawKeys(): List<UInt> = VietnameseEngineState.shared.lock.withLock {
+        VietnameseEngineState.shared.reconstructedRawKeys()
     }
 
     fun lastPreviousWord(): String? = VietnameseEngineState.shared.lock.withLock {

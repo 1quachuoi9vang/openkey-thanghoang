@@ -74,8 +74,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val storage = SharedPreferencesKeyValueStorage(this)
-        settingsStore = OpenKeySettingsStore(storage)
+        settingsStore = SharedPreferencesKeyValueStorage.sharedSettingsStore(this)
 
         setContent {
             MaterialTheme {

@@ -64,7 +64,7 @@ class OpenKeyImeService : InputMethodService() {
         com.tuyenmai.openkey.core.VietnameseDictionary.prewarmAsync()
 
         val storage = SharedPreferencesKeyValueStorage(this)
-        settingsStore = OpenKeySettingsStore(storage)
+        settingsStore = SharedPreferencesKeyValueStorage.sharedSettingsStore(this)
         smartSwitchStore = SmartSwitchStore(storage)
         batchCoordinator = BatchReplacementCoordinator()
         committer = InputConnectionCommitter(
@@ -172,6 +172,14 @@ class OpenKeyImeService : InputMethodService() {
         lifecycleOwner.onPause()
         super.onFinishInputView(finishingInput)
     }
+
+    override fun onFinishInput() {
+        VietnameseEngine.resetSession()
+        autoWordingEngine.clearCandidates()
+        super.onFinishInput()
+    }
+
+    override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onUpdateSelection(
         oldSelStart: Int,
