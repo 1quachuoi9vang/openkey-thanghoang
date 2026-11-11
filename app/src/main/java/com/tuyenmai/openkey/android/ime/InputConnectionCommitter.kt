@@ -7,6 +7,7 @@ import android.view.KeyEvent
 import android.view.inputmethod.InputConnection
 import com.tuyenmai.openkey.core.BatchReplacementCoordinator
 import com.tuyenmai.openkey.core.KeyValueStorage
+import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.TextCommitterTarget
 import kotlin.math.abs
 
