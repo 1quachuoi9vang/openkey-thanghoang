@@ -17,7 +17,8 @@ class BilingualAutoSwitchTest {
             useModernOrthography = 1,
             restoreIfWrongSpelling = 1,
             fixRecommendBrowser = 1,
-            useSmartSwitchKey = 1
+            useSmartSwitchKey = 1,
+            bilingualAutoRestore = 1
         )
     }
 
@@ -631,4 +632,104 @@ class BilingualAutoSwitchTest {
             assertEquals(expected, screen.text, "Typing '$input' must produce '$expected' (Issue #1)")
         }
     }
+
+    // 18. Never Auto-Capitalize Lowercase 'i' & Preserve Vietnamese Context
+    @Test
+    fun testNeverAutoCapitalizeLowercaseI() {
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = false
+        )
+        try {
+            val cases = listOf(
+                "i " to "i ",
+                "ăn cơm i " to "ăn cơm i ",
+                "thôi ngủ i " to "thôi ngủ i ",
+                "i is " to "i í ",
+                "vào game i " to "vào game i ",
+                "test i " to "test i ",
+                "for i in " to "for i in ",
+                "i think " to "i think ",
+                "2i " to "2i ",
+                "a/i " to "a/i ",
+                "x-i " to "x-i ",
+                "ăn cơm. i " to "ăn cơm. i ",
+                "anh sex đi i " to "anh sẽ đi i ",
+                "sex i " to "sẽ i ",
+                "sex i think " to "sex i think ",
+                "sex I think " to "sex I think ",
+                "I " to "I ",
+                "I think " to "I think "
+            )
+            for ((input, expected) in cases) {
+                val screen = VirtualScreen()
+                screen.typeASCII(input)
+                assertEquals(expected, screen.text, "Typing '$input' must produce '$expected' without auto-capitalizing lowercase 'i'")
+            }
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+    }
+
+    // 19. Post-Dot Backspace Clears Stale Sentence Capitalization Flag
+    @Test
+    fun testPostDotBackspaceClearsSentenceCapitalization() {
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = false
+        )
+        try {
+            val screen = VirtualScreen()
+            screen.typeASCII("xin chaof. ")
+            assertEquals("xin chào. ", screen.text)
+            screen.typeKey(VietnameseData.KEY_DELETE.toInt()) // deletes trailing space -> "xin chào."
+            screen.typeASCII("vn ")
+            assertEquals("xin chào.vn ", screen.text, "Deleting space after '.' must cancel sentence-start capitalization")
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+    }
+
+    // 20. Bilingual Auto-Restore Toggle Off Preserves Pure Vietnamese Composition
+    @Test
+    fun testBilingualAutoRestoreToggleOffPreservesVietnameseWithoutEnglishRestore() {
+        VietnameseEngine.syncConfig(bilingualAutoRestore = 0)
+        try {
+            val moreScreen = VirtualScreen()
+            moreScreen.typeASCII("more ")
+            assertEquals("moẻ ", moreScreen.text, "When bilingualAutoRestore=0, 'more ' must stay Vietnamese 'moẻ '")
+
+            val testScreen = VirtualScreen()
+            testScreen.typeASCII("test ")
+            assertEquals("tét ", testScreen.text, "When bilingualAutoRestore=0, 'test ' must stay Vietnamese 'tét '")
+
+            val streakScreen = VirtualScreen()
+            val snaps = streakScreen.typeASCII("one two three ")
+            assertTrue(
+                snaps.all { it.languageSwitchRequest == -1 },
+                "When bilingualAutoRestore=0, typing English words must not emit auto languageSwitchRequest"
+            )
+        } finally {
+            VietnameseEngine.syncConfig(bilingualAutoRestore = 1)
+        }
+    }
 }
+

@@ -226,10 +226,7 @@ fun KeyboardScreen(
                 oneHandedMode = metrics.effectiveOneHandedMode,
                 onCandidateSelected = handleCandidateSelected,
                 onLanguageToggled = {
-                    val nextLang = if (effectiveLanguage == 1) 0 else 1
-                    settingsStore.language = nextLang
-                    VietnameseEngine.resetSession()
-                    autoWordingEngine.clearCandidates()
+                    controller.onKeyAction(KeyAction.SwitchLanguage)
                 },
                 onInputTypeToggled = {
                     val nextType = if (inputType == 0) 1 else 0

@@ -570,4 +570,96 @@ class SmoothArchitectureTest {
         store.debugModeEnabled = false
         assertFalse(OpenKeyLogger.shared.isDebugEnabled)
     }
+
+    // -------------------------------------------------------------------------
+    // 7. English Mode Never Auto-Capitalizes 'i' & Double-Space Period
+    // -------------------------------------------------------------------------
+    @Test
+    fun testEnglishModeNeverAutoCapitalizesIAndProtectsCompoundTokens() {
+        val ctx = EditorContext(
+            inputType = InputContextEvaluator.TYPE_CLASS_TEXT,
+            imeOptions = InputContextEvaluator.IME_ACTION_DONE,
+            packageName = "com.slack"
+        )
+        sessionController.onStartInput(ctx)
+        sessionController.onKeyAction(KeyAction.SwitchLanguage) // English mode (0)
+        assertEquals(0, sessionController.editorUiState.language)
+
+        fun typeEn(s: String) {
+            mockCommitter.reset()
+            for (ch in s) {
+                if (ch == ' ') sessionController.onKeyAction(KeyAction.Space)
+                else sessionController.onKeyAction(KeyAction.CommitChar(ch.toString()))
+            }
+        }
+
+        typeEn("i ")
+        assertEquals("i ", mockCommitter.textBuffer.toString(), "English mode must never auto-capitalize standalone 'i '")
+
+        typeEn("i.e. ")
+        assertEquals("i.e. ", mockCommitter.textBuffer.toString(), "'i.e. ' must never become 'I.e. '")
+
+        typeEn("a/i ")
+        assertEquals("a/i ", mockCommitter.textBuffer.toString())
+
+        typeEn("x-i ")
+        assertEquals("x-i ", mockCommitter.textBuffer.toString())
+
+        typeEn("2i ")
+        assertEquals("2i ", mockCommitter.textBuffer.toString())
+
+        typeEn("http://dont.com ")
+        assertEquals("http://dont.com ", mockCommitter.textBuffer.toString(), "Compound URL token must not expand 'dont' -> 'don\\'t'")
+
+        typeEn("dont ")
+        assertEquals("don't ", mockCommitter.textBuffer.toString(), "Standalone 'dont ' in English mode still repairs to 'don\\'t '")
+
+        typeEn("I ")
+        assertEquals("I ", mockCommitter.textBuffer.toString(), "Explicitly shifted 'I ' remains 'I '")
+    }
+
+    @Test
+    fun testDoubleSpaceInsertsPeriodWhenEnabled() {
+        val ctx = EditorContext(
+            inputType = InputContextEvaluator.TYPE_CLASS_TEXT,
+            imeOptions = InputContextEvaluator.IME_ACTION_SEND,
+            packageName = "com.zing.zalo"
+        )
+        sessionController.onStartInput(ctx)
+
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = true
+        )
+        mockCommitter.reset()
+        for (ch in "xin chaof") {
+            if (ch == ' ') sessionController.onKeyAction(KeyAction.Space)
+            else sessionController.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        sessionController.onKeyAction(KeyAction.Space)
+        sessionController.onKeyAction(KeyAction.Space)
+        assertEquals("xin chào. ", mockCommitter.textBuffer.toString(), "Double-space after word must commit '. ' when enabled")
+
+        // When doubleSpacePeriod = false, two spaces remain two spaces
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = false
+        )
+        mockCommitter.reset()
+        sessionController.onStartInput(ctx)
+        for (ch in "xin chaof") {
+            if (ch == ' ') sessionController.onKeyAction(KeyAction.Space)
+            else sessionController.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        sessionController.onKeyAction(KeyAction.Space)
+        sessionController.onKeyAction(KeyAction.Space)
+        assertEquals("xin chào  ", mockCommitter.textBuffer.toString(), "Double-space must remain two spaces when disabled")
+    }
 }
+

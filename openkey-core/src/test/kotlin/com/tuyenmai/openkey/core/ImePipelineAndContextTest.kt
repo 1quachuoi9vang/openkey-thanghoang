@@ -364,4 +364,94 @@ class ImePipelineAndContextTest {
         assertEquals(1, VietnameseEngineState.shared.vLanguage, "Engine vLanguage must sync back to global setting (1)")
         assertEquals(LanguagePriority.VIETNAMESE_FIRST, VietnameseEngine.effectiveLanguagePriority())
     }
+
+    // -------------------------------------------------------------------------
+    // 7. Async onUpdateSelection In-Flight Queue & Unknown Initial Cursor (-1)
+    // -------------------------------------------------------------------------
+
+    @Test
+    fun testLaggingAsyncSelectionUpdatesNeverResetMidWordOrCapitalizeTrailingI() {
+        val target = MockTextCommitterTarget()
+        val coordinator = BatchReplacementCoordinator()
+        val controller = KeyboardSessionController(
+            committer = target,
+            batchCoordinator = coordinator
+        )
+        controller.onStartInput(EditorContext(packageName = "com.zing.zalo"), initialSelStart = 0, initialSelEnd = 0)
+
+        // Type "khi " with lagging Binder onUpdateSelection arriving 1-2 keystrokes behind
+        controller.onKeyAction(KeyAction.CommitChar("k")) // cursor -> 1
+        controller.onKeyAction(KeyAction.CommitChar("h")) // cursor -> 2
+        // Delayed selection from 'k' arrives now!
+        assertFalse(controller.onUpdateSelection(0, 0, 1, 1), "Lagging self-selection for 'k' must not reset session")
+        assertFalse(controller.onUpdateSelection(1, 1, 2, 2), "Follow-up self-selection for 'h' must not reset session")
+        controller.onKeyAction(KeyAction.CommitChar("i")) // cursor -> 3
+        controller.onKeyAction(KeyAction.Space)           // cursor -> 4
+        assertFalse(controller.onUpdateSelection(2, 2, 3, 3))
+        assertFalse(controller.onUpdateSelection(3, 3, 4, 4))
+        assertEquals("khi ", target.textBuffer.toString(), "'khi ' with lagging onUpdateSelection must never become 'khI '")
+
+        // Type "tooi " -> "tôi " with lagging selection mid-Telex composition
+        controller.onKeyAction(KeyAction.CommitChar("t")) // 5
+        controller.onKeyAction(KeyAction.CommitChar("o")) // 6
+        controller.onKeyAction(KeyAction.CommitChar("o")) // 6 ("ô": bs=1, commit="ô")
+        assertFalse(controller.onUpdateSelection(4, 4, 5, 5), "Lagging 't' selection must not wipe 'tô'")
+        controller.onKeyAction(KeyAction.CommitChar("i")) // 7
+        assertFalse(controller.onUpdateSelection(5, 5, 6, 6), "Lagging 'o'/'ô' selection must not wipe 'tôi'")
+        controller.onKeyAction(KeyAction.Space)           // 8
+        assertFalse(controller.onUpdateSelection(6, 6, 7, 7))
+        assertFalse(controller.onUpdateSelection(7, 7, 8, 8))
+        assertEquals("khi tôi ", target.textBuffer.toString(), "'tooi ' with lagging selection must compose 'tôi '")
+    }
+
+    @Test
+    fun testUnknownInitialCursorMinusOneDoesNotResetFirstWord() {
+        val target = MockTextCommitterTarget()
+        target.textBuffer.append("existing ")
+        target.cursorPosition = 9
+        val coordinator = BatchReplacementCoordinator()
+        val controller = KeyboardSessionController(
+            committer = target,
+            batchCoordinator = coordinator
+        )
+        // WebView / Compose reports initialSelStart = -1
+        controller.onStartInput(EditorContext(packageName = "com.android.chrome"), initialSelStart = -1, initialSelEnd = -1)
+
+        controller.onKeyAction(KeyAction.CommitChar("t"))
+        controller.onKeyAction(KeyAction.CommitChar("o"))
+        // Deferred real cursor offset arrives after 't' (offset 10) and 'o' (offset 11)
+        assertFalse(controller.onUpdateSelection(-1, -1, 10, 10), "Initial deferred cursor anchor must not reset active word")
+        assertFalse(controller.onUpdateSelection(10, 10, 11, 11), "Subsequent self-edit cursor must not reset active word")
+        controller.onKeyAction(KeyAction.CommitChar("o")) // "tô"
+        controller.onKeyAction(KeyAction.CommitChar("i")) // "tôi"
+        controller.onKeyAction(KeyAction.Space)
+        assertEquals("existing tôi ", target.textBuffer.toString())
+    }
+
+    @Test
+    fun testSelfBackspaceDoesNotTriggerSpuriousResetOnDelayedSelection() {
+        val target = MockTextCommitterTarget()
+        val coordinator = BatchReplacementCoordinator()
+        val controller = KeyboardSessionController(
+            committer = target,
+            batchCoordinator = coordinator
+        )
+        controller.onStartInput(EditorContext(packageName = "com.zing.zalo"), initialSelStart = 0, initialSelEnd = 0)
+
+        for (ch in listOf("t", "i", "e", "e", "m")) {
+            controller.onKeyAction(KeyAction.CommitChar(ch))
+        }
+        // Flush pending selections up to "tiêm" (length 4)
+        assertFalse(controller.onUpdateSelection(0, 0, 4, 4))
+
+        // Backspace 'm' (cursor -> 3) then immediately type 'n', 'g', 's' ("tiếng") before backspace IPC returns
+        controller.onKeyAction(KeyAction.Backspace)       // 3
+        controller.onKeyAction(KeyAction.CommitChar("n")) // 4
+        assertFalse(controller.onUpdateSelection(4, 4, 3, 3), "Lagging Backspace selection must not reset session")
+        assertFalse(controller.onUpdateSelection(3, 3, 4, 4), "Follow-up 'n' selection must not reset session")
+        controller.onKeyAction(KeyAction.CommitChar("g")) // 5
+        controller.onKeyAction(KeyAction.CommitChar("s")) // 5 ("tiếng")
+        assertEquals("tiếng", target.textBuffer.toString())
+    }
 }
+

@@ -979,7 +979,6 @@ internal object VietnameseDictionaryCorpus {
         "an user" to "a user",
         "he don't" to "he doesn't",
         "he dont" to "he doesn't",
-        "i is" to "I am",
         "it don't" to "it doesn't",
         "it dont" to "it doesn't",
         "she don't" to "she doesn't",

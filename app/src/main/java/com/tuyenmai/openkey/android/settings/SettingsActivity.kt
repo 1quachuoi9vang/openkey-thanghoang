@@ -127,6 +127,26 @@ fun SettingsScreen(
     var customShorthands by remember { mutableStateOf(settingsStore.getCustomShorthands()) }
 
     DisposableEffect(settingsStore) {
+        fun syncPreviewEngine(changedKey: String? = null) {
+            com.tuyenmai.openkey.core.VietnameseEngine.syncConfig(
+                language = if (changedKey == null || changedKey == OpenKeySettingsStore.KEY_LANGUAGE) settingsStore.language else null,
+                inputType = settingsStore.inputType,
+                checkSpelling = if (settingsStore.checkSpelling) 1 else 0,
+                useModernOrthography = if (settingsStore.useModernOrthography) 1 else 0,
+                restoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0,
+                useSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0,
+                bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
+            )
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = settingsStore.autoWordingEnabled,
+                grammarRepair = settingsStore.grammarRepairEnabled,
+                shorthandExpansion = settingsStore.shorthandExpansionEnabled,
+                candidateSuggestions = settingsStore.candidateSuggestionsEnabled,
+                doubleSpacePeriod = settingsStore.doubleSpacePeriodEnabled
+            )
+            AutoWordingEngine.shared.customShorthands = settingsStore.getCustomShorthands().toMutableMap()
+        }
+        syncPreviewEngine()
         val listener: (String) -> Unit = { key ->
             when (key) {
                 OpenKeySettingsStore.KEY_LANGUAGE -> language = settingsStore.language
@@ -148,6 +168,7 @@ fun SettingsScreen(
                 OpenKeySettingsStore.KEY_CANDIDATE_SUGGESTIONS_ENABLED -> candidateSuggestionsEnabled = settingsStore.candidateSuggestionsEnabled
                 OpenKeySettingsStore.KEY_CUSTOM_SHORTHANDS -> customShorthands = settingsStore.getCustomShorthands()
             }
+            syncPreviewEngine(key)
         }
         settingsStore.addListener(listener)
         onDispose { settingsStore.removeListener(listener) }

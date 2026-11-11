@@ -57,12 +57,13 @@ class InputConnectionCommitter(
         if (deltaChars == 0) return true
         val ic = inputConnectionProvider() ?: return false
 
-        if (batchCoordinator != null && batchCoordinator.hasKnownSelection) {
+        if (batchCoordinator != null && (batchCoordinator.hasKnownSelection || batchCoordinator.isCursorAnchorKnown)) {
             val target = batchCoordinator.onCursorMovedByTrackpad(deltaChars)
             return ic.setSelection(target, target)
         }
 
         // Fallback: send DPAD left / right events
+        batchCoordinator?.onCursorMovedByTrackpad(deltaChars)
         val dpadKey = if (deltaChars < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
         val steps = abs(deltaChars)
         var success = true
@@ -102,6 +103,9 @@ class InputConnectionCommitter(
         beginBatchEdit()
         val success = deleteSurroundingText(toDelete, 0)
         endBatchEdit()
+        if (success) {
+            batchCoordinator?.recordSelfDelete(toDelete)
+        }
         return success
     }
 }

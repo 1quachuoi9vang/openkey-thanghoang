@@ -601,7 +601,8 @@ class AutoWordingEngine private constructor() {
         charCode: Int,
         isBackspace: Boolean,
         composingWord: String,
-        previousWord: String
+        previousWord: String,
+        wordStartOk: Boolean = true
     ): Pair<Int, String>? {
         val dict = VietnameseDictionary.shared
         val isBreak = charCode == VietnameseData.KEY_SPACE.toInt() ||
@@ -629,18 +630,18 @@ class AutoWordingEngine private constructor() {
                 return null
             }
             var corrected: String? = null
-            if (lower == "i") {
-                corrected = "I"
-            } else if (dict.englishContractionGrammar.containsKey(lower)) {
-                corrected = dict.englishContractionGrammar[lower]
-            } else if (dict.englishTypoCorrections.containsKey(lower)) {
-                corrected = dict.englishTypoCorrections[lower]
-            } else if (!dict.isEnglishWord(lower)) {
-                corrected = dict.findEnglishTranspositionMatch(lower)
+            if (wordStartOk) {
+                if (dict.englishContractionGrammar.containsKey(lower)) {
+                    corrected = dict.englishContractionGrammar[lower]
+                } else if (dict.englishTypoCorrections.containsKey(lower)) {
+                    corrected = dict.englishTypoCorrections[lower]
+                } else if (!dict.isEnglishWord(lower)) {
+                    corrected = dict.findEnglishTranspositionMatch(lower)
+                }
             }
 
             if (corrected != null) {
-                val finalWord = if (composingWord.isNotEmpty() && composingWord.first().isUpperCase() && corrected != "I" && !corrected.startsWith("I'")) {
+                val finalWord = if (composingWord.isNotEmpty() && composingWord.first().isUpperCase() && !corrected.startsWith("I'")) {
                     corrected.replaceFirstChar { it.uppercase() }
                 } else {
                     corrected

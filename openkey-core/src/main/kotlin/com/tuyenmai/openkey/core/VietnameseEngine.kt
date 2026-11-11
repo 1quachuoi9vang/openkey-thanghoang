@@ -27,6 +27,7 @@ class VietnameseEngineState {
     var vRestoreIfWrongSpelling: Int = 1
     var vFixRecommendBrowser: Int = 1
     var vUseSmartSwitchKey: Int = 1
+    var vBilingualAutoRestore: Int = 1
 
     var phonotacticRepairHook: ((UIntArray, Int, Int, Int, Int, Boolean) -> Boolean)? = null
 
@@ -361,6 +362,12 @@ class VietnameseEngineState {
             index = 0
             specialChar.clear()
             specialChar.addAll(restored)
+            val lastSpec = restored.last()
+            val lastKey = (lastSpec and CHAR_MASK).toUShort()
+            val lastCaps = (lastSpec and CAPS_MASK) != 0u
+            val isCompSep = lastKey == KEY_DOT || (lastKey == KEY_MINUS && lastCaps) ||
+                    lastKey == KEY_SLASH || (lastKey == KEY_2 && lastCaps) || (lastKey == KEY_SEMICOLON && lastCaps)
+            wordStartOk = !isCompSep
             checkSpelling()
         } else {
             for (i in restored.indices) {
@@ -421,7 +428,7 @@ class VietnameseEngineState {
     }
 
     fun checkLiveMidWordAutoEscape(keyCode: UShort): Boolean {
-        if (vInputType != 0) return false
+        if (vInputType != 0 || vBilingualAutoRestore == 0) return false
 
         // 1. Double-Consonant rr/ff/ss + Vowel Live Mid-Word Restoration
         // ("correct", "error", "errors", "sorry", "current", "office", "coffee", "message", "issue")
@@ -526,7 +533,8 @@ class VietnameseEngineState {
         useModernOrthography: Int? = null,
         restoreIfWrongSpelling: Int? = null,
         fixRecommendBrowser: Int? = null,
-        useSmartSwitchKey: Int? = null
+        useSmartSwitchKey: Int? = null,
+        bilingualAutoRestore: Int? = null
     ) {
         lock.withLock {
             if (language != null) vLanguage = language
@@ -539,6 +547,7 @@ class VietnameseEngineState {
             if (restoreIfWrongSpelling != null) vRestoreIfWrongSpelling = restoreIfWrongSpelling
             if (fixRecommendBrowser != null) vFixRecommendBrowser = fixRecommendBrowser
             if (useSmartSwitchKey != null) vUseSmartSwitchKey = useSmartSwitchKey
+            if (bilingualAutoRestore != null) vBilingualAutoRestore = bilingualAutoRestore
         }
     }
 
@@ -758,6 +767,7 @@ class VietnameseEngineState {
         hookOutput.code = HookCodeState.DO_NOTHING
         hookOutput.extCode = 2 // Delete
         if (specialChar.isNotEmpty()) {
+            sentenceEndedWithPunctuation = false
             specialChar.removeLast()
             if (specialChar.isEmpty()) {
                 restoreLastTypingState()
@@ -765,6 +775,7 @@ class VietnameseEngineState {
         } else if (spaceCount > 0) {
             spaceCount--
             if (spaceCount == 0) {
+                sentenceEndedWithPunctuation = false
                 restoreLastTypingState()
             }
         } else {
@@ -993,11 +1004,12 @@ object VietnameseEngine {
         useModernOrthography: Int? = null,
         restoreIfWrongSpelling: Int? = null,
         fixRecommendBrowser: Int? = null,
-        useSmartSwitchKey: Int? = null
+        useSmartSwitchKey: Int? = null,
+        bilingualAutoRestore: Int? = null
     ) {
         VietnameseEngineState.shared.syncConfig(
             language, inputType, checkSpelling, useModernOrthography,
-            restoreIfWrongSpelling, fixRecommendBrowser, useSmartSwitchKey
+            restoreIfWrongSpelling, fixRecommendBrowser, useSmartSwitchKey, bilingualAutoRestore
         )
     }
 

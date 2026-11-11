@@ -209,6 +209,19 @@ class OpenKeyAndroidAppTest {
         val del2 = committerWithCoord.deletePreviousWord()
         assertTrue(del2)
         assertEquals(7, mockIc.deletedBefore)
+
+        // Delayed selection callback for the self-deleted position (14 - 5 - 7 = 2) must not trigger reset
+        assertFalse(coordinator.shouldResetOnSelectionUpdate(2, 2))
+
+        // Post-commitBatch trackpad scrub still uses setSelection via isCursorAnchorKnown (zero IPC, zero DPAD fallback)
+        coordinator.commitBatch(0, "abc")
+        assertFalse(coordinator.hasKnownSelection)
+        assertTrue(coordinator.isCursorAnchorKnown)
+        committerWithCoord.moveCursorBy(-2)
+        assertEquals(3, mockIc.selectionStart)
+        assertEquals(3, mockIc.selectionEnd)
+        assertEquals(0, mockIc.getExtractedTextCallCount)
+        assertEquals(0, mockIc.sentKeyEvents.size)
     }
 
     // 4. Phone Touch-Only Architecture Gating (REQ-009, ADR-015)

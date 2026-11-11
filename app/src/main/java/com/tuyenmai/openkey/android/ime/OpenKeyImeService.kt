@@ -89,18 +89,21 @@ class OpenKeyImeService : InputMethodService() {
 
         syncSettingsToEngine()
 
-        settingsStore.addListener { _ ->
-            syncSettingsToEngine()
+        settingsStore.addListener { changedKey ->
+            syncSettingsToEngine(changedKey)
         }
     }
 
-    private fun syncSettingsToEngine() {
+    internal fun syncSettingsToEngine(changedKey: String? = null) {
         val state = VietnameseEngineState.shared
-        state.vLanguage = settingsStore.language
+        if (changedKey == null || changedKey == OpenKeySettingsStore.KEY_LANGUAGE) {
+            state.vLanguage = settingsStore.language
+        }
         state.vInputType = settingsStore.inputType
         state.vUseModernOrthography = if (settingsStore.useModernOrthography) 1 else 0
         state.vCheckSpelling = if (settingsStore.checkSpelling) 1 else 0
         state.vRestoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0
+        state.vBilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
         state.vUseSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0
 
         autoWordingEngine.syncConfig(
@@ -154,8 +157,8 @@ class OpenKeyImeService : InputMethodService() {
             )
             sessionController.onStartInput(
                 context = context,
-                initialSelStart = info.initialSelStart.coerceAtLeast(0),
-                initialSelEnd = info.initialSelEnd.coerceAtLeast(0)
+                initialSelStart = info.initialSelStart,
+                initialSelEnd = info.initialSelEnd
             )
             currentEvaluation = InputContextEvaluator.evaluate(context)
         } else {

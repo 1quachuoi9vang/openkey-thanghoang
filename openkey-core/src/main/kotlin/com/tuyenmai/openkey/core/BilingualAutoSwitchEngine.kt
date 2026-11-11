@@ -159,7 +159,7 @@ object BilingualAutoSwitchEngine {
     private fun tryCollapseDuplicateEnglishWord(
         state: VietnameseEngineState, breakKeyCode: UShort, handleCode: Int, fullRawLower: String, dict: VietnameseDictionary
     ): Boolean {
-        if (breakKeyCode != KEY_SPACE || state.previousWords.isEmpty()) return false
+        if (state.vBilingualAutoRestore == 0 || breakKeyCode != KEY_SPACE || state.previousWords.isEmpty()) return false
         val prev = state.previousWords.last()
         if ((prev.composedString.lowercase() == fullRawLower || prev.rawString.lowercase() == fullRawLower) &&
             dict.englishDuplicateCollapseWords.contains(fullRawLower)
@@ -200,8 +200,10 @@ object BilingualAutoSwitchEngine {
         val prevWord = state.previousWords.last().composedString
         val cand1 = "${prevWord.lowercase()} $fullRawLower"
         val cand2 = "${prevWord.lowercase()} $composedLower"
-        val matched = dict.englishBigramGrammar[cand1] ?: dict.englishBigramGrammar[cand2]
-            ?: dict.vietnameseBigramGrammar[cand1] ?: dict.vietnameseBigramGrammar[cand2] ?: return Pair(null, false)
+        val engMatch = if (state.vBilingualAutoRestore != 0) {
+            dict.englishBigramGrammar[cand1] ?: dict.englishBigramGrammar[cand2]
+        } else null
+        val matched = engMatch ?: dict.vietnameseBigramGrammar[cand1] ?: dict.vietnameseBigramGrammar[cand2] ?: return Pair(null, false)
 
         val parts = matched.split(" ")
         if (parts.size != 2) return Pair(null, false)
@@ -247,24 +249,20 @@ object BilingualAutoSwitchEngine {
         composed: String, composedLower: String, fullKeys: List<UInt>,
         hasAnyDiacritic: Boolean, bigramWord: String?, dict: VietnameseDictionary
     ): String? {
+        val bilingualOn = state.vBilingualAutoRestore != 0
         var rw = bigramWord
-        if (rw == null) {
+        if (rw == null && bilingualOn) {
             dict.englishContractionGrammar[fullRawLower]?.let { contraction ->
                 if (fullRawLower != "im" || priority == LanguagePriority.ENGLISH_FIRST) {
                     rw = applyCasing(contraction, fullRawStr.firstOrNull()?.isUpperCase() == true)
                 }
             }
         }
-        if (rw == null && breakKeyCode == KEY_SPACE && fullRawStr == "i" && composed == "i" &&
-            (priority == LanguagePriority.ENGLISH_FIRST || !hasAnyDiacritic)
-        ) {
-            rw = "I"
-        }
         val rawCapCount = fullKeys.count { (it and CAPS_MASK) != 0u }
         if (rw == null && rawCapCount < 2 && !(breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n"))) {
             val prevWord = state.previousWords.lastOrNull()?.composedString
             val isCap = composed.firstOrNull()?.isUpperCase() == true || fullRawStr.firstOrNull()?.isUpperCase() == true
-            rw = if (priority == LanguagePriority.ENGLISH_FIRST) {
+            rw = if (bilingualOn && priority == LanguagePriority.ENGLISH_FIRST) {
                 val engMatch = if (!dict.isValidVietnameseSyllable(composedLower)) {
                     dict.englishTypoCorrections[fullRawLower] ?: dict.findEnglishTranspositionMatch(fullRawLower)
                 } else null
@@ -280,18 +278,21 @@ object BilingualAutoSwitchEngine {
             } else {
                 (dict.vietnameseTypoCorrections[composedLower] ?: dict.vietnameseTypoCorrections[fullRawLower])?.let { applyCasing(it, isCap) }
                     ?: run {
-                        if (!dict.isValidVietnameseSyllable(composedLower) && !dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower)) {
+                        if (!dict.isValidVietnameseSyllable(composedLower) && (!bilingualOn || (!dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower)))) {
                             val sp = dict.findVietnameseSpatialMatch(fullRawLower, composedLower, prevWord)
-                                ?: if (stdRawLower != fullRawLower && !dict.isEnglishWord(stdRawLower)) dict.findVietnameseSpatialMatch(stdRawLower, composedLower, prevWord) else null
+                                ?: if (stdRawLower != fullRawLower && (!bilingualOn || !dict.isEnglishWord(stdRawLower))) dict.findVietnameseSpatialMatch(stdRawLower, composedLower, prevWord) else null
                             sp?.let { applyCasing(it, isCap) }
-                                ?: dict.englishTypoCorrections[fullRawLower]?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
-                                ?: dict.findEnglishTranspositionMatch(fullRawLower)?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
+                                ?: if (bilingualOn) {
+                                    dict.englishTypoCorrections[fullRawLower]?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
+                                        ?: dict.findEnglishTranspositionMatch(fullRawLower)?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
+                                } else null
                         } else null
                     }
             }
         }
         val shouldCapSentence = state.sentenceEndedWithPunctuation && AutoWordingEngine.shared.isEnabled &&
-                AutoWordingEngine.shared.grammarRepairEnabled && state.wordStartOk
+                AutoWordingEngine.shared.grammarRepairEnabled && state.wordStartOk &&
+                composedLower != "i" && fullRawLower != "i"
         if (breakKeyCode == KEY_SPACE) state.sentenceEndedWithPunctuation = false
         if (shouldCapSentence && breakKeyCode == KEY_SPACE) {
             rw = rw?.let { it.replaceFirstChar { c -> c.uppercase() } } ?: run {
@@ -311,6 +312,11 @@ object BilingualAutoSwitchEngine {
         val rawCapCount = fullKeys.count { (it and CAPS_MASK) != 0u }
         if (replacementWord != null) {
             return Pair(true, stringToTargetKeys(replacementWord))
+        } else if (state.vBilingualAutoRestore == 0) {
+            if (isTransformed && (!state.wordStartOk || (state.tempDisableKey && (hasAnyDiacritic || state.droppedKeys.isNotEmpty())))) {
+                return Pair(true, state.keyStates.slice(0 until state.stateIndex))
+            }
+            return Pair(false, fullKeys)
         } else if (dict.isEnglishWord(composedLower) && !hasAnyDiacritic) {
             return Pair(false, fullKeys)
         } else if (isTransformed) {
@@ -347,7 +353,7 @@ object BilingualAutoSwitchEngine {
         shouldRestore: Boolean, targetKeys: List<UInt>, fullKeys: List<UInt>,
         handleCode: Int, dict: VietnameseDictionary
     ): Boolean {
-        if (breakKeyCode != KEY_SPACE || !currentIsEnglish || !state.wordStartOk || state.previousWords.isEmpty()) return false
+        if (state.vBilingualAutoRestore == 0 || breakKeyCode != KEY_SPACE || !currentIsEnglish || !state.wordStartOk || state.previousWords.isEmpty()) return false
         var firstRewriteIdx: Int? = null
         for (idx in state.previousWords.indices) {
             val prev = state.previousWords[idx]
@@ -448,10 +454,10 @@ object BilingualAutoSwitchEngine {
         val isEng = dict.isEnglishWord(targetStr.lowercase()) || dict.englishContractionGrammar.values.contains(targetStr) || targetStr == "I"
         if (breakKeyCode == KEY_SPACE) {
             state.previousWords.add(
-                PreviousWordEntry(rawString = targetStr, composedString = targetStr, rawKeys = targetKeys, composedWord = targetKeys, wasRestoredToEnglish = isEng)
+                PreviousWordEntry(rawString = targetStr, composedString = targetStr, rawKeys = targetKeys, composedWord = targetKeys, wasRestoredToEnglish = isEng && state.vBilingualAutoRestore != 0)
             )
             if (state.previousWords.size > 2) state.previousWords.removeAt(0)
-            if (isEng) {
+            if (isEng && state.vBilingualAutoRestore != 0) {
                 state.consecutiveEnglishWordCount++
                 if (state.consecutiveEnglishWordCount >= 3) state.hookOutput.languageSwitchRequest = 0
             } else {
@@ -459,9 +465,9 @@ object BilingualAutoSwitchEngine {
             }
         } else {
             state.previousWords.clear()
-            if (breakKeyCode == VietnameseData.KEY_COMMA && (isEng || !state.wordStartOk)) {
+            if (state.vBilingualAutoRestore != 0 && breakKeyCode == VietnameseData.KEY_COMMA && (isEng || !state.wordStartOk)) {
                 state.consecutiveEnglishWordCount += 1
-            } else if (breakKeyCode != VietnameseData.KEY_COMMA || !isEng) {
+            } else if (breakKeyCode != VietnameseData.KEY_COMMA || !isEng || state.vBilingualAutoRestore == 0) {
                 state.consecutiveEnglishWordCount = 0
             }
         }
@@ -484,11 +490,11 @@ object BilingualAutoSwitchEngine {
                     composedString = composed,
                     rawKeys = if (isComposedEng) stdRawKeys else fullKeys,
                     composedWord = state.typingWord.slice(0 until state.index),
-                    wasRestoredToEnglish = isEng
+                    wasRestoredToEnglish = isEng && state.vBilingualAutoRestore != 0
                 )
             )
             if (state.previousWords.size > 2) repeat(state.previousWords.size - 2) { state.previousWords.removeAt(0) }
-            if (isEng) {
+            if (isEng && state.vBilingualAutoRestore != 0) {
                 state.consecutiveEnglishWordCount += 1
                 if (state.consecutiveEnglishWordCount >= 3) state.hookOutput.languageSwitchRequest = 0
             } else {
@@ -496,7 +502,7 @@ object BilingualAutoSwitchEngine {
             }
         } else {
             state.previousWords.clear()
-            if (breakKeyCode == VietnameseData.KEY_COMMA && (isEng || !state.wordStartOk)) {
+            if (state.vBilingualAutoRestore != 0 && breakKeyCode == VietnameseData.KEY_COMMA && (isEng || !state.wordStartOk)) {
                 state.consecutiveEnglishWordCount += 1
             } else {
                 state.consecutiveEnglishWordCount = 0
