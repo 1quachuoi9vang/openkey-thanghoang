@@ -211,10 +211,10 @@ class OpenKeyAndroidAppTest {
         assertEquals(7, mockIc.deletedBefore)
 
         // Delayed selection callback for the self-deleted position (14 - 5 - 7 = 2) must not trigger reset
-        assertFalse(coordinator.shouldResetOnSelectionUpdate(2, 2))
+        assertFalse(coordinator.onUpdateSelection(9, 9, 2, 2))
 
         // Post-commitBatch trackpad scrub still uses setSelection via isCursorAnchorKnown (zero IPC, zero DPAD fallback)
-        coordinator.commitBatch(0, "abc")
+        coordinator.commitBatch(committerWithCoord, 0, "abc")
         assertFalse(coordinator.hasKnownSelection)
         assertTrue(coordinator.isCursorAnchorKnown)
         committerWithCoord.moveCursorBy(-2)
