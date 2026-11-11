@@ -346,14 +346,14 @@ fun VietnameseEngineState.getCharacterCode(data: UInt): UInt {
     var key = data.baseKey.toUInt()
 
     if ((data and MARK_MASK) != 0u) {
-        val markOffsets = mapOf(
-            MARK1_MASK to 0,
-            MARK2_MASK to 2,
-            MARK3_MASK to 4,
-            MARK4_MASK to 6,
-            MARK5_MASK to 8
-        )
-        var markElem = (markOffsets[data and MARK_MASK] ?: -2) + capsElem
+        var markElem = when (data and MARK_MASK) {
+            MARK1_MASK -> 0
+            MARK2_MASK -> 2
+            MARK3_MASK -> 4
+            MARK4_MASK -> 6
+            MARK5_MASK -> 8
+            else -> -2
+        } + capsElem
         val base = data.baseKey
         if ((base == KEY_A || base == KEY_O || base == KEY_U || base == KEY_E) &&
             !data.hasCircumflexOrStroke && !data.hasHornOrBreve
@@ -449,7 +449,8 @@ fun VietnameseEngineState.handleModernMark() {
     if (isRule3_1) {
         val ch2 = if (vsi + 2 < index) CHR(vsi + 2) else KEY_EMPTY
         val ch3 = if (vsi + 3 < index) CHR(vsi + 3) else KEY_EMPTY
-        val isEndMatch = listOf(KEY_P, KEY_T, KEY_M, KEY_N, KEY_O, KEY_U, KEY_I, KEY_C).contains(ch2) ||
+        val isEndMatch = ch2 == KEY_P || ch2 == KEY_T || ch2 == KEY_M || ch2 == KEY_N ||
+            ch2 == KEY_O || ch2 == KEY_U || ch2 == KEY_I || ch2 == KEY_C ||
             (ch2 == KEY_C && ch3 == KEY_H) || (ch2 == KEY_N && (ch3 == KEY_H || ch3 == KEY_G))
         vowelWillSetMark = if (vsi + 2 < index && isEndMatch) vsi + 1 else vowelStartIndex
     } else if ((c0 == KEY_I && c1 == KEY_A) || (c0 == KEY_Y && c1 == KEY_A) || (c0 == KEY_U && c1 == KEY_A) ||

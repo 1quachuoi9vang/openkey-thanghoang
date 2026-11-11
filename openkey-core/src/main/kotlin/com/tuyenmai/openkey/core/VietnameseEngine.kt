@@ -118,10 +118,16 @@ class VietnameseEngineState {
     fun isKeyJ(key: UShort) = processingChar[vInputType][4] == key
 
     fun isMarkKey(keyCode: UShort): Boolean =
-        if (vInputType != 1) listOf(KEY_S, KEY_F, KEY_R, KEY_J, KEY_X).contains(keyCode) else listOf(KEY_1, KEY_2, KEY_3, KEY_5, KEY_4).contains(keyCode)
+        if (vInputType != 1) (keyCode == KEY_S || keyCode == KEY_F || keyCode == KEY_R || keyCode == KEY_J || keyCode == KEY_X)
+        else (keyCode == KEY_1 || keyCode == KEY_2 || keyCode == KEY_3 || keyCode == KEY_5 || keyCode == KEY_4)
     fun isBracketKey(key: UShort) = key == KEY_LEFT_BRACKET || key == KEY_RIGHT_BRACKET
     fun isSpecialKey(keyCode: UShort): Boolean =
-        if (vInputType == 0) listOf(KEY_W, KEY_E, KEY_R, KEY_O, KEY_LEFT_BRACKET, KEY_RIGHT_BRACKET, KEY_A, KEY_S, KEY_D, KEY_F, KEY_J, KEY_Z, KEY_X).contains(keyCode) else VietnameseData.isNumberKey(keyCode)
+        if (vInputType == 0) (
+            keyCode == KEY_W || keyCode == KEY_E || keyCode == KEY_R || keyCode == KEY_O ||
+            keyCode == KEY_LEFT_BRACKET || keyCode == KEY_RIGHT_BRACKET || keyCode == KEY_A ||
+            keyCode == KEY_S || keyCode == KEY_D || keyCode == KEY_F || keyCode == KEY_J ||
+            keyCode == KEY_Z || keyCode == KEY_X
+        ) else VietnameseData.isNumberKey(keyCode)
 
     fun CHR(idx: Int): UShort {
         if (idx in 0 until index && idx < maxBuff) {
@@ -440,13 +446,12 @@ class VietnameseEngineState {
         // 1. Double-Consonant rr/ff/ss + Vowel Live Mid-Word Restoration
         // ("correct", "error", "errors", "sorry", "current", "office", "coffee", "message", "issue")
         if (tempDisableKey && droppedKeys.isNotEmpty() && rawStateIndex >= 4) {
-            val vowelSet = setOf(KEY_A, KEY_E, KEY_I, KEY_O, KEY_U, KEY_Y)
-            if (vowelSet.contains(keyCode)) {
+            if (keyCode == KEY_A || keyCode == KEY_E || keyCode == KEY_I || keyCode == KEY_O || keyCode == KEY_U || keyCode == KEY_Y) {
                 val rawBeforeLen = rawStateIndex - 1
                 if (rawBeforeLen >= 2) {
                     val c1 = (rawKeyStates[rawBeforeLen - 1] and CHAR_MASK).toUShort()
                     val c2 = (rawKeyStates[rawBeforeLen - 2] and CHAR_MASK).toUShort()
-                    if (c1 == c2 && setOf(KEY_R, KEY_F, KEY_S, KEY_J, KEY_X).contains(c1)) {
+                    if (c1 == c2 && (c1 == KEY_R || c1 == KEY_F || c1 == KEY_S || c1 == KEY_J || c1 == KEY_X)) {
                         val sb = StringBuilder()
                         for (i in 0 until rawBeforeLen) {
                             val c = VietnameseData.keyCodeToCharacter(rawKeyStates[i])
@@ -519,9 +524,9 @@ class VietnameseEngineState {
                 val vRange = vowelStartIndex..vowelEndIndex
                 val hasVowelMod = vRange.any { (typingWord[it] and (TONE_MASK or TONEW_MASK or MARK_MASK)) != 0u }
                 if (hasVowelMod) {
-                    val isImpossibleCoda = setOf(VietnameseData.KEY_B, KEY_K, KEY_L, KEY_Q, VietnameseData.KEY_V).contains(keyCode) || (keyCode == KEY_D && CHR(0) != KEY_D)
+                    val isImpossibleCoda = keyCode == VietnameseData.KEY_B || keyCode == KEY_K || keyCode == KEY_L || keyCode == KEY_Q || keyCode == VietnameseData.KEY_V || (keyCode == KEY_D && CHR(0) != KEY_D)
                     val hasNonEnteringMark = vRange.any { (typingWord[it] and (MARK2_MASK or MARK3_MASK or MARK4_MASK)) != 0u }
-                    val isIncompatibleStopCoda = setOf(KEY_C, KEY_P, KEY_T).contains(keyCode) && hasNonEnteringMark
+                    val isIncompatibleStopCoda = (keyCode == KEY_C || keyCode == KEY_P || keyCode == KEY_T) && hasNonEnteringMark
                     if (isImpossibleCoda || isIncompatibleStopCoda) {
                         restoreWordFromRawKeys(oldScreenLength = index)
                         return true
@@ -872,11 +877,12 @@ class VietnameseEngineState {
             tempDisableKey = true
         }
 
-        val nonInitialUFollowers = setOf(
-            KEY_E, KEY_I, KEY_H, KEY_Y, KEY_L, VietnameseData.KEY_B,
-            KEY_D, KEY_G, KEY_K, KEY_Q, VietnameseData.KEY_V
-        )
-        if (vInputType == 0 && index == 1 && CHR(0) == KEY_U && typingWord[0].isStandaloneW && nonInitialUFollowers.contains(keyCode)) {
+        if (vInputType == 0 && index == 1 && CHR(0) == KEY_U && typingWord[0].isStandaloneW && (
+                keyCode == KEY_E || keyCode == KEY_I || keyCode == KEY_H || keyCode == KEY_Y ||
+                keyCode == KEY_L || keyCode == VietnameseData.KEY_B || keyCode == KEY_D ||
+                keyCode == KEY_G || keyCode == KEY_K || keyCode == KEY_Q || keyCode == VietnameseData.KEY_V
+            )
+        ) {
             val wCaps = typingWord[0].isCaps
             typingWord[0] = KEY_W.toUInt() or (if (wCaps) CAPS_MASK else 0u)
             keyStates[0] = typingWord[0]

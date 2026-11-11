@@ -45,6 +45,7 @@ class VietnameseDictionary private constructor() {
         private val YE_INVALID = Regex("^(?:b|ch|d|đ|g|gh|gi|h|k|kh|l|m|n|ng|ngh|nh|p|ph|r|s|t|th|tr|v|x)y[êếềểễệ]")
         private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|(?<=.)[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$")
         private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:oa|oă|oe|uê|uy|uâ)|^giu[ôốồổỗộâấầẩẫậêếềểễệyýỳỷỹỵ]")
+        private val NHIA_INVALID = Regex("^nh[iíìỉĩị][aáàảãạ]$|^nhĩa$")
 
         val shared by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { VietnameseDictionary() }
         @Volatile var isPrewarmed: Boolean = false
@@ -197,7 +198,7 @@ class VietnameseDictionary private constructor() {
             if (GH_NGH_INVALID.containsMatchIn(lower) || G_NG_INVALID.containsMatchIn(lower)) return false
             if (K_INVALID.containsMatchIn(lower) || C_INVALID.containsMatchIn(lower)) return false
             if (YE_INVALID.containsMatchIn(lower) || INVALID_RHYMES.containsMatchIn(lower) || LABIAL_MEDIALS.containsMatchIn(lower)) return false
-            if (lower.matches(Regex("^nh[iíìỉĩị][aáàảãạ]$|^nhĩa$"))) return false
+            if (NHIA_INVALID.matches(lower)) return false
             val lastCoda = lower.last()
             if (lastCoda == 'c' || lastCoda == 'p' || lastCoda == 't' || lower.endsWith("ch")) {
                 if (!lower.any { it in "áắấéếíóốớúứýạặậẹệịọộợụựỵ" }) return false
@@ -224,7 +225,7 @@ class VietnameseDictionary private constructor() {
     val keepWords: Set<String> = VietnameseDictionaryCorpus.keepWords
     val validTelexKeys: Set<String>
     val englishFrequencyRanked: List<String> = VietnameseDictionaryCorpus.freqRankedList
-    val englishPrefixMap: Map<Char, List<String>>
+    val englishPrefixMap: Map<String, List<String>>
     val englishNextWordBigrams: Map<String, List<String>> = VietnameseDictionaryCorpus.englishNextWordBigrams
     val englishTypoCorrections: Map<String, String> = VietnameseDictionaryCorpus.englishTypoCorrections
     val vietnameseTypoCorrections: Map<String, String> = VietnameseDictionaryCorpus.vietnameseTypoCorrections
@@ -291,9 +292,9 @@ class VietnameseDictionary private constructor() {
         }
         this.stemToneToSyllable = stemMap
 
-        val prefixMap = mutableMapOf<Char, MutableList<String>>()
+        val prefixMap = mutableMapOf<String, MutableList<String>>()
         val rankedList = (englishFrequencyRanked + englishPriorityWords + englishLookbackStems + englishWords).distinct()
-        for (w in rankedList) if (w.isNotEmpty()) prefixMap.getOrPut(w[0]) { mutableListOf() }.add(w)
+        for (w in rankedList) for (len in 1..minOf(3, w.length)) prefixMap.getOrPut(w.substring(0, len)) { mutableListOf() }.add(w)
         this.englishPrefixMap = prefixMap
     }
 
@@ -467,7 +468,7 @@ class VietnameseDictionary private constructor() {
         englishTypoCorrections[clean]?.let { if (!matches.contains(it)) matches.add(it) }
         if (englishWords.contains(clean) && !matches.any { it.equals(clean, ignoreCase = true) }) matches.add(clean)
 
-        for (w in (englishPrefixMap[clean[0]] ?: emptyList())) {
+        for (w in (englishPrefixMap[clean.take(3)] ?: emptyList())) {
             if (w.startsWith(clean) && !matches.any { it.equals(w, ignoreCase = true) }) {
                 matches.add(w)
                 if (matches.size >= limit) break
@@ -488,8 +489,7 @@ class VietnameseDictionary private constructor() {
     fun computeEnglishNextWordCandidates(previousWord: String, maxCount: Int = 3): List<String> =
         previousWord.trim().lowercase().let { if (it.isEmpty()) emptyList() else (englishNextWordBigrams[it] ?: emptyList()).take(maxCount) }
 
-    fun isValidVietnameseSyllable(word: String): Boolean =
-        word.lowercase().let { isPhonotacticallyValidVietnameseSyllable(it) && syllableSet.contains(it) }
+    fun isValidVietnameseSyllable(word: String): Boolean = syllableSet.contains(word.lowercase())
 
     fun isEnglishPriorityWord(rawAscii: String): Boolean = englishPriorityWords.contains(rawAscii.lowercase())
 
