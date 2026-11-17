@@ -109,12 +109,59 @@ class InputConnectionCommitter(
 
         val toDelete = (trailingSpaces + wordChars).coerceAtLeast(1).coerceAtMost(textBefore.length)
         beginBatchEdit()
-        val success = deleteSurroundingText(toDelete, 0)
-        endBatchEdit()
+        val success = try {
+            deleteSurroundingText(toDelete, 0)
+        } finally {
+            endBatchEdit()
+        }
         if (success) {
             batchCoordinator?.recordSelfDelete(toDelete)
         }
         return success
+    }
+
+    override fun deleteSelectionIfAny(): Boolean {
+        val ic = inputConnectionProvider() ?: return false
+        val selected = ic.getSelectedText(0)
+        if (selected.isNullOrEmpty()) return false
+        ic.beginBatchEdit()
+        val committed = try {
+            ic.commitText("", 1)
+        } finally {
+            ic.endBatchEdit()
+        }
+        if (committed) {
+            batchCoordinator?.onSelectionDeleted()
+        }
+        return committed
+    }
+
+    override fun deleteSingleBackward(): Int {
+        val ic = inputConnectionProvider() ?: return 0
+        val before = ic.getTextBeforeCursor(2, 0)
+        val deleteCount = if (
+            before != null &&
+            before.length >= 2 &&
+            Character.isSurrogatePair(before[before.length - 2], before[before.length - 1])
+        ) {
+            2
+        } else {
+            1
+        }
+        return if (ic.deleteSurroundingText(deleteCount, 0)) deleteCount else 0
+    }
+
+    override fun sendEnterKey(): Boolean {
+        val ic = inputConnectionProvider() ?: return false
+        return if (keyEventSender != null) {
+            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            true
+        } else {
+            val downSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+            val upSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            if (downSent && upSent) true else ic.commitText("\n", 1)
+        }
     }
 }
 

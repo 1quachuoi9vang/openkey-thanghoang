@@ -112,7 +112,7 @@ fun VietnameseEngineState.checkSpelling(forceCheckVowel: Boolean = false) {
                     if (hasMark && !is1 && !is5) {
                         spellingOK = false
                     }
-                } else if (index >= 2 && CHR(index - 1) == KEY_T) {
+                } else if (index >= 2 && (CHR(index - 1) == KEY_T || CHR(index - 1) == KEY_C || CHR(index - 1) == KEY_P)) {
                     val wordTone = typingWord[index - 2]
                     val hasMark = (wordTone and MARK_MASK) != 0u
                     val is1 = (wordTone and MARK1_MASK) != 0u
@@ -130,49 +130,55 @@ fun VietnameseEngineState.checkSpelling(forceCheckVowel: Boolean = false) {
     tempDisableKey = !(spellingOK && spellingVowelOK)
 }
 
-fun VietnameseEngineState.repairPhonotacticClusterIfNeeded(isInsertingMark: Boolean = false): Boolean {
-    if (AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled) return false
-    val hook = phonotacticRepairHook
-    if (hook != null) {
-        if (index < 3) return false
-        findAndCalculateVowel(forGrammar = true)
-        if (vowelCount < 2) return false
-        val hooked = hook(
-            typingWord,
-            index,
-            vowelStartIndex,
-            vowelEndIndex,
-            vowelCount,
-            isInsertingMark
-        )
-        if (hooked) return true
-    }
-
-    if (index < 3) return false
-    findAndCalculateVowel(forGrammar = true)
-    if (vowelCount < 2) return false
-
+internal fun repairPhonotacticClusterCore(
+    typingWord: UIntArray,
+    index: Int,
+    vowelStartIndex: Int,
+    vowelEndIndex: Int,
+    isInsertingMark: Boolean,
+    allowClusterRules1And2: Boolean = true
+): Boolean {
     var repaired = false
     val vsi = vowelStartIndex
     val vei = vowelEndIndex
 
     fun charAt(idx: Int): UShort = (typingWord[idx] and CHAR_MASK).toUShort()
 
+    // Rule 0: iêu/yêu (without final consonant) -> iêu/yêu (unconditional phonotactic rule)
+    val isIeuYeu = vei >= vsi + 2 &&
+        (charAt(vei - 2) == KEY_I || charAt(vei - 2) == KEY_Y) &&
+        charAt(vei - 1) == KEY_E &&
+        charAt(vei) == KEY_U
+    if (isIeuYeu) {
+        val hasToneOrInserting = isInsertingMark ||
+                (typingWord[vei - 2] and MARK_MASK) != 0u ||
+                (typingWord[vei - 1] and MARK_MASK) != 0u ||
+                (typingWord[vei] and MARK_MASK) != 0u
+        if (hasToneOrInserting && (typingWord[vei - 1] and TONE_MASK) == 0u) {
+            typingWord[vei - 1] = typingWord[vei - 1] or (TONE_MASK or AUTO_TONE_MASK)
+            repaired = true
+        }
+    }
+
+    if (!allowClusterRules1And2) return repaired
+
     val hasFinalConsonant = (index - 1 > vei) && VietnameseData.isConsonant(charAt(vei + 1))
-    if (!hasFinalConsonant) return false
+    if (!hasFinalConsonant) return repaired
 
     // Rule 1: ie/ye + final consonant -> iê/yê
-    val prev = charAt(vei - 1)
-    val curr = charAt(vei)
-    if ((prev == KEY_I || prev == KEY_Y) && curr == KEY_E) {
-        val prevIdx = vei - 1
-        val currIdx = vei
-        val hasToneOrInserting = isInsertingMark ||
-                (typingWord[prevIdx] and MARK_MASK) != 0u ||
-                (typingWord[currIdx] and MARK_MASK) != 0u
-        if (hasToneOrInserting && (typingWord[vei] and TONE_MASK) == 0u) {
-            typingWord[vei] = typingWord[vei] or (TONE_MASK or AUTO_TONE_MASK)
-            repaired = true
+    if (vei >= 1) {
+        val prev = charAt(vei - 1)
+        val curr = charAt(vei)
+        if ((prev == KEY_I || prev == KEY_Y) && curr == KEY_E) {
+            val prevIdx = vei - 1
+            val currIdx = vei
+            val hasToneOrInserting = isInsertingMark ||
+                    (typingWord[prevIdx] and MARK_MASK) != 0u ||
+                    (typingWord[currIdx] and MARK_MASK) != 0u
+            if (hasToneOrInserting && (typingWord[vei] and TONE_MASK) == 0u) {
+                typingWord[vei] = typingWord[vei] or (TONE_MASK or AUTO_TONE_MASK)
+                repaired = true
+            }
         }
     }
 
@@ -197,6 +203,35 @@ fun VietnameseEngineState.repairPhonotacticClusterIfNeeded(isInsertingMark: Bool
     return repaired
 }
 
+fun VietnameseEngineState.repairPhonotacticClusterIfNeeded(isInsertingMark: Boolean = false): Boolean {
+    if (index < 3) return false
+    findAndCalculateVowel(forGrammar = true)
+    if (vowelCount < 2) return false
+
+    val hook = phonotacticRepairHook
+    if (hook != null) {
+        val hooked = hook(
+            typingWord,
+            index,
+            vowelStartIndex,
+            vowelEndIndex,
+            vowelCount,
+            isInsertingMark
+        )
+        if (hooked) return true
+    }
+
+    val allowClusterRules1And2 = !(AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled)
+    return repairPhonotacticClusterCore(
+        typingWord = typingWord,
+        index = index,
+        vowelStartIndex = vowelStartIndex,
+        vowelEndIndex = vowelEndIndex,
+        isInsertingMark = isInsertingMark,
+        allowClusterRules1And2 = allowClusterRules1And2
+    )
+}
+
 fun VietnameseEngineState.checkGrammar(deltaBackSpace: Int) {
     if (index <= 1 || index >= maxBuff) return
 
@@ -210,8 +245,8 @@ fun VietnameseEngineState.checkGrammar(deltaBackSpace: Int) {
     if (index >= 3) {
         for (i in (index - 1) downTo 0) {
             val ch = CHR(i)
-            if (ch == KEY_N || ch == KEY_C || ch == KEY_I || ch == KEY_M || ch == KEY_P || ch == KEY_T) {
-                if (i - 2 >= 0 && CHR(i - 1) == KEY_O && CHR(i - 2) == KEY_U) {
+            if (ch == KEY_N || ch == KEY_C || ch == KEY_I || ch == KEY_M || ch == KEY_P || ch == KEY_T || ch == KEY_U) {
+                if (i - 2 >= 0 && CHR(i - 1) == KEY_O && CHR(i - 2) == KEY_U && !(i - 3 >= 0 && CHR(i - 3) == KEY_Q)) {
                     val mask1 = typingWord[i - 1].hasHornOrBreve
                     val mask2 = typingWord[i - 2].hasHornOrBreve
                     if (mask1 != mask2) {
@@ -275,9 +310,9 @@ fun VietnameseEngineState.checkCorrectVowel(charset: List<UShortArray>, i: Int, 
         if (k < 0) break
     }
 
-    // limit mark for end consonant: "C", "T"
+    // limit mark for end consonant: "C", "T", "P"
     if (isCorrect && charset[i].size > 1 && (isKeyF(markKey) || isKeyX(markKey) || isKeyR(markKey))) {
-        if (charset[i][1] == KEY_C || charset[i][1] == KEY_T) {
+        if (charset[i][1] == KEY_C || charset[i][1] == KEY_T || charset[i][1] == KEY_P) {
             isCorrect = false
         } else if (charset[i].size > 2 && charset[i][2] == KEY_T) {
             isCorrect = false

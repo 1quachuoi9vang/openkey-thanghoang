@@ -1,6 +1,13 @@
 package com.tuyenmai.openkey.core
 
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
+data class ShiftTapResult(
+    val isShifted: Boolean,
+    val isCapsLocked: Boolean,
+    val lastShiftTapMs: Long
+)
 
 sealed class GestureAction {
     data class CursorMove(val steps: Int) : GestureAction()
@@ -15,10 +22,12 @@ sealed class GestureAction {
 class KeyboardGestureController {
 
     companion object {
-        const val LONG_PRESS_TIMEOUT_MS = 220L
+        const val LONG_PRESS_TIMEOUT_MS = 300L
+        const val DOUBLE_TAP_CAPS_LOCK_WINDOW_MS = 350L
         const val SPACEBAR_TRACKPAD_ACTIVATION_DP = 10f
         const val SPACEBAR_STEP_DP = 12f
         const val BACKSPACE_WORD_DELETE_STEP_DP = 24f
+        val DOT_PUNCTUATION_VARIANTS = listOf("?", "!", ",", "@", "/", ":")
     }
 
     var isTrackpadActive: Boolean = false
@@ -117,6 +126,7 @@ class KeyboardGestureController {
             'u' -> listOf("ư", "ú", "ù", "ủ", "ũ", "ụ")
             'i' -> listOf("í", "ì", "ỉ", "ĩ", "ị")
             'y' -> listOf("ý", "ỳ", "ỷ", "ỹ", "ỵ")
+            '.' -> DOT_PUNCTUATION_VARIANTS
             else -> emptyList()
         }
 
@@ -132,5 +142,52 @@ class KeyboardGestureController {
             return resolveLongPressVariants(key[0])
         }
         return emptyList()
+    }
+
+    fun resolveLongPressPopupItems(key: KeyModel): List<String> {
+        if (key.primaryLabel == ".") return DOT_PUNCTUATION_VARIANTS
+        if (key.primaryLabel.length == 1) {
+            val variants = resolveLongPressVariants(key.primaryLabel[0])
+            val secondary = key.secondaryLabel
+            if (variants.isNotEmpty()) {
+                return if (!secondary.isNullOrEmpty()) listOf(secondary) + variants else variants
+            }
+            if (!key.isFunctional && !secondary.isNullOrEmpty()) {
+                return listOf(secondary)
+            }
+        }
+        return emptyList()
+    }
+
+    fun resolvePopupSlideIndex(
+        dragOffsetX: Float,
+        itemWidthPx: Float,
+        itemCount: Int,
+        initialIndex: Int = 0
+    ): Int {
+        if (itemCount <= 0) return 0
+        if (itemWidthPx <= 0f) return initialIndex.coerceIn(0, itemCount - 1)
+        val delta = (dragOffsetX / itemWidthPx).roundToInt()
+        return (initialIndex + delta).coerceIn(0, itemCount - 1)
+    }
+
+    fun onShiftTap(
+        isShifted: Boolean,
+        isCapsLocked: Boolean,
+        nowMs: Long,
+        lastShiftTapMs: Long
+    ): ShiftTapResult {
+        if (isCapsLocked) {
+            return ShiftTapResult(isShifted = false, isCapsLocked = false, lastShiftTapMs = 0L)
+        }
+        if (isShifted) {
+            val isDoubleTap = lastShiftTapMs > 0L && (nowMs - lastShiftTapMs) in 0L..DOUBLE_TAP_CAPS_LOCK_WINDOW_MS
+            return if (isDoubleTap) {
+                ShiftTapResult(isShifted = true, isCapsLocked = true, lastShiftTapMs = 0L)
+            } else {
+                ShiftTapResult(isShifted = false, isCapsLocked = false, lastShiftTapMs = 0L)
+            }
+        }
+        return ShiftTapResult(isShifted = true, isCapsLocked = false, lastShiftTapMs = nowMs)
     }
 }

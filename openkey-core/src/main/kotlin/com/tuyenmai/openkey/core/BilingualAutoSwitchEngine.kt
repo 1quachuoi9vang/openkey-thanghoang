@@ -16,7 +16,8 @@ data class AutoRestoreUndoSnapshot(
     var originalKeyStates: List<UInt>,
     var originalStateIndex: Int,
     var replacedLengthOnScreen: Int,
-    var rawLowerWord: String
+    var rawLowerWord: String,
+    var trailingCount: Int = 1
 )
 
 object BilingualAutoSwitchEngine {
@@ -160,7 +161,11 @@ object BilingualAutoSwitchEngine {
     private fun tryCollapseDuplicateEnglishWord(
         state: VietnameseEngineState, breakKeyCode: UShort, handleCode: Int, fullRawLower: String, dict: VietnameseDictionary
     ): Boolean {
-        if (state.vBilingualAutoRestore == 0 || breakKeyCode != KEY_SPACE || state.previousWords.isEmpty()) return false
+        if (state.vBilingualAutoRestore == 0 ||
+            (AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled) ||
+            breakKeyCode != KEY_SPACE ||
+            state.previousWords.isEmpty()
+        ) return false
         val prev = state.previousWords.last()
         if (prev.trailingSpaces == 1 &&
             (prev.composedString.lowercase() == fullRawLower || prev.rawString.lowercase() == fullRawLower) &&
@@ -248,6 +253,40 @@ object BilingualAutoSwitchEngine {
         return Pair(null, false)
     }
 
+    private fun isImpossibleOrInvalidVnInput(fullRawLower: String, composedLower: String): Boolean {
+        if (!VietnameseDictionary.hasValidVietnameseOnset(fullRawLower)) return true
+        val lastChar = composedLower.lastOrNull()
+        val isStopCoda = lastChar == 'c' || lastChar == 'p' || lastChar == 't' || composedLower.endsWith("ch")
+        if (isStopCoda && composedLower == fullRawLower) return false
+        if (composedLower.any { it in "wfjz" }) return true
+        if (fullRawLower.contains("ueng") || composedLower.contains("ueng")) return true
+        if (isStopCoda) return false
+        if (composedLower.startsWith("qu") && composedLower.drop(2).firstOrNull()?.let { it in "ơớờởỡợ" } == true) return false
+        return !VietnameseDictionary.isPhonotacticallyValidVietnameseSyllable(composedLower)
+    }
+
+    private fun resolveVietnameseAutoRepair(
+        fullRawLower: String, stdRawLower: String, composedLower: String,
+        prevWord: String?, bilingualOn: Boolean, dict: VietnameseDictionary
+    ): String? {
+        if (dict.isValidVietnameseSyllable(composedLower) ||
+            (bilingualOn && (dict.isEnglishWord(fullRawLower) || dict.isEnglishWord(composedLower)))
+        ) {
+            return null
+        }
+        val canonRaw = VietnameseDictionary.canonicalizeTelexKeystrokes(fullRawLower)
+        dict.stemToneToSyllable[fullRawLower]?.let { return it }
+        if (canonRaw != fullRawLower) dict.stemToneToSyllable[canonRaw]?.let { return it }
+        if (stdRawLower != fullRawLower && (!bilingualOn || !dict.isEnglishWord(stdRawLower))) {
+            dict.stemToneToSyllable[stdRawLower]?.let { return it }
+        }
+        if (!isImpossibleOrInvalidVnInput(fullRawLower, composedLower)) return null
+        return dict.findVietnameseSpatialMatch(fullRawLower, composedLower, prevWord)
+            ?: if (stdRawLower != fullRawLower && (!bilingualOn || !dict.isEnglishWord(stdRawLower))) {
+                dict.findVietnameseSpatialMatch(stdRawLower, composedLower, prevWord)
+            } else null
+    }
+
     private fun resolveWordReplacement(
         state: VietnameseEngineState, breakKeyCode: UShort, priority: LanguagePriority,
         fullRawStr: String, fullRawLower: String, stdRawLower: String,
@@ -255,6 +294,7 @@ object BilingualAutoSwitchEngine {
         hasAnyDiacritic: Boolean, bigramWord: String?, dict: VietnameseDictionary
     ): String? {
         val bilingualOn = state.vBilingualAutoRestore != 0
+        val grammarSuppressed = AutoWordingEngine.shared.isEnabled && !AutoWordingEngine.shared.grammarRepairEnabled
         var rw = bigramWord
         if (rw == null && bilingualOn) {
             dict.englishContractionGrammar[fullRawLower]?.let { contraction ->
@@ -268,32 +308,20 @@ object BilingualAutoSwitchEngine {
         if (rw == null && rawCapCount < 2 && !hasTrailingUndo && !(breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n"))) {
             val prevWord = state.previousWords.lastOrNull()?.composedString
             val isCap = composed.firstOrNull()?.isUpperCase() == true || fullRawStr.firstOrNull()?.isUpperCase() == true
+            val engCap = fullRawStr.firstOrNull()?.isUpperCase() == true
+            val vnTypo = dict.vietnameseTypoCorrections[composedLower] ?: dict.vietnameseTypoCorrections[fullRawLower]
+            val engTypo = if (bilingualOn && !dict.isValidVietnameseSyllable(composedLower)) {
+                dict.englishTypoCorrections[fullRawLower]
+                    ?: if (!grammarSuppressed) dict.findEnglishTranspositionMatch(fullRawLower) else null
+            } else null
             rw = if (bilingualOn && priority == LanguagePriority.ENGLISH_FIRST) {
-                val engMatch = if (!dict.isValidVietnameseSyllable(composedLower)) {
-                    dict.englishTypoCorrections[fullRawLower] ?: dict.findEnglishTranspositionMatch(fullRawLower)
-                } else null
-                engMatch?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
-                    ?: (dict.vietnameseTypoCorrections[composedLower] ?: dict.vietnameseTypoCorrections[fullRawLower])?.let { applyCasing(it, isCap) }
-                    ?: run {
-                        if (!dict.isValidVietnameseSyllable(composedLower) && !dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower)) {
-                            val sp = dict.findVietnameseSpatialMatch(fullRawLower, composedLower, prevWord)
-                                ?: if (stdRawLower != fullRawLower && !dict.isEnglishWord(stdRawLower)) dict.findVietnameseSpatialMatch(stdRawLower, composedLower, prevWord) else null
-                            sp?.let { applyCasing(it, isCap) }
-                        } else null
-                    }
+                engTypo?.let { applyCasing(it, engCap) }
+                    ?: vnTypo?.let { applyCasing(it, isCap) }
+                    ?: resolveVietnameseAutoRepair(fullRawLower, stdRawLower, composedLower, prevWord, bilingualOn, dict)?.let { applyCasing(it, isCap) }
             } else {
-                (dict.vietnameseTypoCorrections[composedLower] ?: dict.vietnameseTypoCorrections[fullRawLower])?.let { applyCasing(it, isCap) }
-                    ?: run {
-                        if (!dict.isValidVietnameseSyllable(composedLower) && (!bilingualOn || (!dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower)))) {
-                            val sp = dict.findVietnameseSpatialMatch(fullRawLower, composedLower, prevWord)
-                                ?: if (stdRawLower != fullRawLower && (!bilingualOn || !dict.isEnglishWord(stdRawLower))) dict.findVietnameseSpatialMatch(stdRawLower, composedLower, prevWord) else null
-                            sp?.let { applyCasing(it, isCap) }
-                                ?: if (bilingualOn) {
-                                    dict.englishTypoCorrections[fullRawLower]?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
-                                        ?: dict.findEnglishTranspositionMatch(fullRawLower)?.let { applyCasing(it, fullRawStr.firstOrNull()?.isUpperCase() == true) }
-                                } else null
-                        } else null
-                    }
+                vnTypo?.let { applyCasing(it, isCap) }
+                    ?: resolveVietnameseAutoRepair(fullRawLower, stdRawLower, composedLower, prevWord, bilingualOn, dict)?.let { applyCasing(it, isCap) }
+                    ?: engTypo?.let { applyCasing(it, engCap) }
             }
         }
         val shouldCapSentence = state.sentenceEndedWithPunctuation && AutoWordingEngine.shared.isEnabled &&
@@ -336,6 +364,10 @@ object BilingualAutoSwitchEngine {
                 state.droppedKeys.isNotEmpty() && dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower) -> fullKeys
                 dict.englishPriorityWords.contains(fullRawLower) -> fullKeys
                 priority == LanguagePriority.ENGLISH_FIRST && dict.isEnglishWord(fullRawLower) -> fullKeys
+                state.previousWords.lastOrNull()?.let { prev ->
+                    prev.composedString.lowercase() == prev.rawString.lowercase() &&
+                        dict.englishNextWordBigrams[prev.rawString.lowercase()]?.contains(fullRawLower) == true
+                } == true -> fullKeys
                 dict.isEnglishWord(fullRawLower) && !dict.isValidVietnameseSyllable(composedLower) -> fullKeys
                 rawCapCount >= 2 && (!dict.isValidVietnameseSyllable(composedLower) || isShortAllCapsToneOnlyAcronym) -> fullKeys
                 breakKeyCode == KEY_QUOTE && fullRawLower.endsWith("n") -> fullKeys
@@ -450,7 +482,8 @@ object BilingualAutoSwitchEngine {
             originalComposedString = origComposed, originalTypingWord = origTypingWord,
             originalIndex = origIndex, originalKeyStates = origKeyStates,
             originalStateIndex = origStateIndex, replacedLengthOnScreen = state.hookOutput.newCharCount + trailingCount,
-            rawLowerWord = fullRawLower
+            rawLowerWord = fullRawLower,
+            trailingCount = trailingCount
         )
 
         val isEng = dict.isEnglishWord(targetStr.lowercase()) || dict.englishContractionGrammar.values.contains(targetStr) || targetStr == "I"
@@ -511,5 +544,67 @@ object BilingualAutoSwitchEngine {
                 state.consecutiveEnglishWordCount = 0
             }
         }
+    }
+
+    fun handleSingleBackspaceUndo(state: VietnameseEngineState): Boolean {
+        val undo = state.autoRestoreUndoState ?: return false
+        state.autoRestoreUndoState = null
+        if (undo.trailingCount != 1 || state.spaceCount != 1 || state.specialChar.isNotEmpty()) {
+            return false
+        }
+        val targetLen = undo.originalIndex.coerceAtMost(state.maxBuff)
+        for (i in 0 until state.maxBuff) {
+            state.typingWord[i] = if (i < targetLen) undo.originalTypingWord[i] else KEY_EMPTY.toUInt()
+            state.keyStates[i] = if (i < undo.originalStateIndex) undo.originalKeyStates[i] else KEY_EMPTY.toUInt()
+        }
+        for (i in state.rawKeyStates.indices) {
+            state.rawKeyStates[i] = if (i < undo.originalStateIndex) undo.originalKeyStates[i] else KEY_EMPTY.toUInt()
+        }
+        state.index = targetLen
+        state.stateIndex = undo.originalStateIndex.coerceAtMost(state.maxBuff)
+        state.rawStateIndex = undo.originalStateIndex.coerceAtMost(state.rawKeyStates.size)
+        state.droppedKeys.clear()
+        state.spaceCount = 0
+        state.specialChar.clear()
+        state.typingStates.clear()
+        state.previousWords.removeLastOrNull()
+        state.undoneRawWord = undo.rawLowerWord
+        state.tempDisableKey = false
+        if (state.vCheckSpelling != 0) state.checkSpelling()
+
+        state.hookOutput.code = HookCodeState.WILL_PROCESS
+        state.hookOutput.backspaceCount = undo.replacedLengthOnScreen.coerceAtMost(255)
+        state.hookOutput.newCharCount = targetLen
+        state.hookOutput.extCode = 2
+        for (i in 0 until targetLen) {
+            state.hookOutput.charData[targetLen - 1 - i] = state.GET(state.typingWord[i])
+        }
+        return true
+    }
+
+    fun handleDoubleSpacePeriod(state: VietnameseEngineState): Boolean {
+        val aw = AutoWordingEngine.shared
+        if (!aw.isEnabled || !aw.doubleSpacePeriodEnabled) return false
+        if (state.spaceCount != 1 || state.specialChar.isNotEmpty() || state.sentenceEndedWithPunctuation) {
+            return false
+        }
+        if (state.typingStates.isEmpty()) return false
+        val nowMs = state.currentTimeMsProvider().toDouble()
+        val elapsed = nowMs - state.lastSpaceUptime
+        if (state.lastSpaceUptime <= 0.0 || elapsed < 0.0 || elapsed > 500.0) return false
+
+        state.hookOutput.code = HookCodeState.WILL_PROCESS
+        state.hookOutput.backspaceCount = 1
+        state.hookOutput.newCharCount = 2
+        state.hookOutput.extCode = 1
+        state.hookOutput.charData[1] = '.'.code.toUInt() or PURE_CHARACTER_MASK
+        state.hookOutput.charData[0] = ' '.code.toUInt() or PURE_CHARACTER_MASK
+        state.sentenceEndedWithPunctuation = true
+        state.lastSpaceUptime = 0.0
+        state.startNewSessionInternal()
+        state.typingStates.clear()
+        state.previousWords.clear()
+        state.consecutiveEnglishWordCount = 0
+        return true
     }
 }

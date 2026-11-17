@@ -98,6 +98,7 @@ object OpenKeyL10n {
             "grammarRepairTitle" to "Tự động sửa đảo chữ (tineg -> tiếng)",
             "shorthandTitle" to "Cho phép mở rộng gõ tắt",
             "candidateStripTitle" to "Hiển thị thanh từ gợi ý",
+            "doubleSpacePeriodTitle" to "Chạm 2 lần phím cách để thêm dấu chấm",
             "customShorthandEditorTitle" to "Danh sách viết tắt cá nhân",
             "resetFrequenciesTitle" to "Đặt lại tần suất học từ",
             "resetFrequenciesSuccess" to "Đã đặt lại tần suất học từ thành công"
@@ -109,6 +110,7 @@ object OpenKeyL10n {
             "grammarRepairTitle" to "Repair Cluster Transposition",
             "shorthandTitle" to "Enable Shorthand Expansion",
             "candidateStripTitle" to "Candidate Suggestion Strip",
+            "doubleSpacePeriodTitle" to "Double-Space Period (. )",
             "customShorthandEditorTitle" to "Custom Shorthands",
             "resetFrequenciesTitle" to "Reset Learned Word Frequencies",
             "resetFrequenciesSuccess" to "Learned word frequencies reset successfully"

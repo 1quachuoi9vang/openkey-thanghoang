@@ -13,7 +13,9 @@ data class EditorUiState(
     val isSecureField: Boolean = false,
     val isNumericField: Boolean = false,
     val language: Int = 1,
-    val packageName: String = ""
+    val packageName: String = "",
+    val suppressSuggestions: Boolean = false,
+    val isAutoShifted: Boolean = false
 )
 
 /**
@@ -51,6 +53,9 @@ class KeyboardSessionController(
     private var _englishWordStartOk: Boolean = true
     private var _canDoubleSpacePeriod: Boolean = false
     private var _lastWordSpaceTimestampMs: Long = 0L
+    private var lastInputType: Int = InputContextEvaluator.TYPE_CLASS_TEXT
+    private var autoInsertedSpaceAfterCandidate: Boolean = false
+    var currentTimeMsProvider: () -> Long = { System.currentTimeMillis() }
 
     private val uiStateListeners = CopyOnWriteArrayList<(EditorUiState) -> Unit>()
 
@@ -91,6 +96,8 @@ class KeyboardSessionController(
         _previousWord = ""
         _englishWordStartOk = true
         _canDoubleSpacePeriod = false
+        lastInputType = context.inputType
+        autoInsertedSpaceAfterCandidate = false
 
         val eval = InputContextEvaluator.evaluate(context)
         val appLang = if (settingsStore.useSmartSwitchKey) {
@@ -104,7 +111,11 @@ class KeyboardSessionController(
         }
         VietnameseEngine.syncConfig(language = appLang)
 
-        batchCoordinator.resetExpectedCursor(initialSelStart, initialSelStart >= 0)
+        if (initialSelStart >= 0 && initialSelEnd >= 0 && initialSelStart != initialSelEnd) {
+            batchCoordinator.resetExpectedSelection(initialSelStart, initialSelEnd)
+        } else {
+            batchCoordinator.resetExpectedCursor(initialSelStart, initialSelStart >= 0)
+        }
 
         val newState = EditorUiState(
             enterActionLabel = eval.enterActionLabel,
@@ -114,9 +125,18 @@ class KeyboardSessionController(
             isSecureField = eval.isSecureField,
             isNumericField = eval.isNumericField,
             language = appLang,
-            packageName = context.packageName
+            packageName = context.packageName,
+            suppressSuggestions = eval.suppressSuggestions,
+            isAutoShifted = false
         )
         updateEditorUiState(newState)
+    }
+
+    fun syncCursorCapsMode(cursorCapsMode: Int) {
+        val autoShift = InputContextEvaluator.shouldAutoShift(cursorCapsMode, lastInputType)
+        if (editorUiState.isAutoShifted != autoShift) {
+            updateEditorUiState(editorUiState.copy(isAutoShifted = autoShift))
+        }
     }
 
     /**
@@ -130,6 +150,7 @@ class KeyboardSessionController(
     ): Boolean {
         val resetOccurred = batchCoordinator.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd)
         if (resetOccurred) {
+            autoInsertedSpaceAfterCandidate = false
             autoWordingEngine.clearCandidates()
             _composingWord = ""
             _previousWord = ""
@@ -163,6 +184,13 @@ class KeyboardSessionController(
             is KeyAction.CommitChar -> {
                 _canDoubleSpacePeriod = false
                 val charStr = action.char
+                if (autoInsertedSpaceAfterCandidate) {
+                    autoInsertedSpaceAfterCandidate = false
+                    if (charStr.length == 1 && charStr[0] in setOf(',', '.', '!', '?', ';', ':')) {
+                        batchCoordinator.commitBatch(target, 1, charStr)
+                        return true
+                    }
+                }
                 if (editorUiState.isSecureField) {
                     logger.log(LogSubsystem.SESSION) { "Secure input active — keystroke redacted, bypassing IME" }
                 }
@@ -178,13 +206,17 @@ class KeyboardSessionController(
                     if (charStr.length == 1 && (charStr[0].isLetter() || charStr[0] == '\'')) {
                         _composingWord += charStr
                         batchCoordinator.commitBatch(target, 0, charStr)
-                        autoWordingEngine.didProcessEnglishKeyEvent(
-                            charStr[0].code,
-                            false,
-                            _composingWord,
-                            _previousWord,
-                            wordStartOk = _englishWordStartOk
-                        )
+                        if (!editorUiState.suppressSuggestions) {
+                            autoWordingEngine.didProcessEnglishKeyEvent(
+                                charStr[0].code,
+                                false,
+                                _composingWord,
+                                _previousWord,
+                                wordStartOk = _englishWordStartOk
+                            )
+                        } else {
+                            autoWordingEngine.clearCandidates()
+                        }
                         return true
                     } else if (charStr.length == 1 && (charStr[0] == ',' || charStr[0] == '.' || charStr[0] == '!' || charStr[0] == '?' || charStr[0] == ';' || charStr[0] == ':')) {
                         val ch0 = charStr[0]
@@ -208,6 +240,7 @@ class KeyboardSessionController(
                             batchCoordinator.commitBatch(target, 0, charStr)
                         }
                         _englishWordStartOk = !(ch0 == '.' || ch0 == ':')
+                        if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                         return true
                     } else {
                         _composingWord = ""
@@ -247,6 +280,7 @@ class KeyboardSessionController(
                             batchCoordinator.commitBatch(target, 0, charStr)
                         }
                     }
+                    if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                     val wordContext = VietnameseEngine.getWordContext()
                     _composingWord = wordContext.composedWord
                     return true
@@ -261,29 +295,43 @@ class KeyboardSessionController(
 
             is KeyAction.Backspace -> {
                 _canDoubleSpacePeriod = false
+                autoInsertedSpaceAfterCandidate = false
+                if (target.deleteSelectionIfAny()) {
+                    _composingWord = ""
+                    VietnameseEngine.resetSession()
+                    autoWordingEngine.clearCandidates()
+                    batchCoordinator.onSelectionDeleted()
+                    return true
+                }
+                if (batchCoordinator.hasActiveSelection) {
+                    target.commitText("", 1)
+                    _composingWord = ""
+                    VietnameseEngine.resetSession()
+                    autoWordingEngine.clearCandidates()
+                    batchCoordinator.onSelectionDeleted()
+                    return true
+                }
                 if (editorUiState.bypassVietnamese) {
                     _composingWord = ""
                     _previousWord = ""
-                    target.deleteSurroundingText(1, 0)
-                    batchCoordinator.recordSelfDelete(1)
+                    val deleted = target.deleteSingleBackward()
+                    if (deleted > 0) batchCoordinator.recordSelfDelete(deleted)
                     VietnameseEngine.resetSession()
                     autoWordingEngine.clearCandidates()
                     return true
                 }
 
                 if (editorUiState.language == 0) {
+                    val deleted = target.deleteSingleBackward()
+                    if (deleted > 0) batchCoordinator.recordSelfDelete(deleted)
                     if (_composingWord.isNotEmpty()) {
-                        _composingWord = _composingWord.dropLast(1)
-                        target.deleteSurroundingText(1, 0)
-                        batchCoordinator.recordSelfDelete(1)
-                        if (_composingWord.isNotEmpty()) {
+                        _composingWord = _composingWord.dropLast(deleted.coerceAtMost(_composingWord.length))
+                        if (_composingWord.isNotEmpty() && !editorUiState.suppressSuggestions) {
                             autoWordingEngine.didProcessEnglishKeyEvent(0, true, _composingWord, _previousWord, wordStartOk = _englishWordStartOk)
                         } else {
                             autoWordingEngine.clearCandidates()
                         }
                     } else {
-                        target.deleteSurroundingText(1, 0)
-                        batchCoordinator.recordSelfDelete(1)
                         _englishWordStartOk = true
                         autoWordingEngine.clearCandidates()
                     }
@@ -298,16 +346,18 @@ class KeyboardSessionController(
                     ) {
                         batchCoordinator.commitBatch(target, snapshot.backspaceCount, snapshot.decodedString)
                     } else {
-                        target.deleteSurroundingText(1, 0)
-                        batchCoordinator.recordSelfDelete(1)
+                        val deleted = target.deleteSingleBackward()
+                        if (deleted > 0) batchCoordinator.recordSelfDelete(deleted)
                     }
                 }
+                if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                 val wordContext = VietnameseEngine.getWordContext()
                 _composingWord = wordContext.composedWord
                 return true
             }
 
             is KeyAction.Space -> {
+                autoInsertedSpaceAfterCandidate = false
                 if (editorUiState.bypassVietnamese) {
                     _composingWord = ""
                     _previousWord = ""
@@ -319,7 +369,7 @@ class KeyboardSessionController(
                     return true
                 }
 
-                val nowMs = System.currentTimeMillis()
+                val nowMs = currentTimeMsProvider()
                 if (_canDoubleSpacePeriod &&
                     autoWordingEngine.isEnabled &&
                     autoWordingEngine.doubleSpacePeriodEnabled &&
@@ -366,6 +416,7 @@ class KeyboardSessionController(
                         autoWordingEngine.clearCandidates()
                     }
                     _englishWordStartOk = true
+                    if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                     return true
                 }
 
@@ -393,10 +444,36 @@ class KeyboardSessionController(
                 if (hadVietnameseWord) {
                     _lastWordSpaceTimestampMs = nowMs
                 }
+                if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                 return true
             }
 
             is KeyAction.Enter -> {
+                autoInsertedSpaceAfterCandidate = false
+                if (!editorUiState.bypassVietnamese) {
+                    if (editorUiState.language == 0 && _composingWord.isNotEmpty()) {
+                        val rep = autoWordingEngine.didProcessEnglishKeyEvent(
+                            VietnameseData.KEY_RETURN.toInt(),
+                            false,
+                            _composingWord,
+                            _previousWord,
+                            wordStartOk = _englishWordStartOk
+                        )
+                        if (rep != null) {
+                            batchCoordinator.commitBatch(target, rep.first, rep.second)
+                        }
+                    } else if (editorUiState.language == 1) {
+                        VietnameseEngine.handleKeyEventCommitFirst(VietnameseData.KEY_RETURN.toInt(), 0, false) { snapshot ->
+                            if ((snapshot.code == HookCodeState.WILL_PROCESS ||
+                                        snapshot.code == HookCodeState.RESTORE ||
+                                        snapshot.code == HookCodeState.RESTORE_AND_START_NEW_SESSION) &&
+                                (snapshot.backspaceCount > 0 || snapshot.decodedString.isNotEmpty())
+                            ) {
+                                batchCoordinator.commitBatch(target, snapshot.backspaceCount, snapshot.decodedString)
+                            }
+                        }
+                    }
+                }
                 _composingWord = ""
                 _previousWord = ""
                 _englishWordStartOk = true
@@ -404,7 +481,9 @@ class KeyboardSessionController(
                 VietnameseEngine.resetSession()
                 autoWordingEngine.clearCandidates()
                 if (editorUiState.shouldSendNewlineOnEnter) {
-                    batchCoordinator.commitBatch(target, 0, "\n")
+                    if (!target.sendEnterKey()) {
+                        batchCoordinator.commitBatch(target, 0, "\n")
+                    }
                 } else {
                     target.performEditorAction(editorUiState.imeActionId)
                 }
@@ -412,6 +491,7 @@ class KeyboardSessionController(
             }
 
             is KeyAction.SwitchLanguage -> {
+                autoInsertedSpaceAfterCandidate = false
                 _composingWord = ""
                 _previousWord = ""
                 _englishWordStartOk = true
@@ -459,12 +539,13 @@ class KeyboardSessionController(
         _composingWord = ""
         _englishWordStartOk = true
         _canDoubleSpacePeriod = true
-        _lastWordSpaceTimestampMs = System.currentTimeMillis()
+        _lastWordSpaceTimestampMs = currentTimeMsProvider()
         batchCoordinator.commitBatch(target, candidate.replaceLength, candidate.text + " ")
+        autoInsertedSpaceAfterCandidate = true
         autoWordingEngine.recordCandidateAcceptance(candidate.text)
         VietnameseEngine.resetSession()
         _previousWord = candidate.text
-        val nextCands = autoWordingEngine.computeNextWordCandidates(candidate.text)
+        val nextCands = if (editorUiState.suppressSuggestions) emptyList() else autoWordingEngine.computeNextWordCandidates(candidate.text)
         autoWordingEngine.updateCandidates(nextCands)
         return true
     }
@@ -474,6 +555,7 @@ class KeyboardSessionController(
      */
     fun onMoveCursor(deltaChars: Int): Boolean {
         _canDoubleSpacePeriod = false
+        autoInsertedSpaceAfterCandidate = false
         val target = committer ?: return false
         return target.moveCursorBy(deltaChars)
     }
@@ -482,6 +564,7 @@ class KeyboardSessionController(
      * Swipe left on backspace word deletion.
      */
     fun onDeletePreviousWord(): Boolean {
+        autoInsertedSpaceAfterCandidate = false
         val target = committer ?: return false
         _composingWord = ""
         _previousWord = ""

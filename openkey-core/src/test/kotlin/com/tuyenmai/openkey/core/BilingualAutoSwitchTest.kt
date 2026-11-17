@@ -841,6 +841,350 @@ class BilingualAutoSwitchTest {
             assertEquals(expected, s.text, "Input '$input' must produce '$expected'")
         }
     }
+
+    // 23. Stage 1: Shared Lexicon, Phonotactics & Corpus Integrity (including buýt, ưm, ừm)
+    @Test
+    fun testStage1CorpusAndPhonotacticsInvariants() {
+        val dict = VietnameseDictionary.shared
+
+        val validSyllables = listOf(
+            "ký", "kỳ", "kỷ", "kỹ", "kỵ",
+            "quỳnh", "gìn", "khuâng",
+            "quờ", "quở", "quớ", "quỡ", "quợ", "quỷnh", "quỵch",
+            "núy", "rúy", "đúy",
+            "xoá", "xóa", "kiểu", "nguyệt", "nguyễn", "thuở", "gì", "cừu", "hươu", "khuơ",
+            "buýt", "ưm", "ừm", "quoe", "quòe"
+        )
+        for (w in validSyllables) {
+            assertTrue(dict.isValidVietnameseSyllable(w), "Valid Vietnamese syllable '$w' must be accepted")
+        }
+
+        val invalidSyllables = listOf(
+            "web", "bue", "cue", "due", "sue", "true",
+            "gioa", "gioá", "giuố", "bãu", "buổn", "kểu", "boá", "lưong", "giy", "bưn", "tưn"
+        )
+        for (w in invalidSyllables) {
+            assertFalse(dict.isValidVietnameseSyllable(w), "Invalid syllable '$w' must be rejected")
+        }
+        for (w in listOf("bue", "cue", "due", "giuố", "bãu", "buổn", "lưong", "giy", "bưn", "tưn")) {
+            assertFalse(VietnameseDictionary.isPhonotacticallyValidVietnameseSyllable(w), "Invalid syllable '$w' must fail direct phonotactic check")
+        }
+
+        for ((k, values) in dict.compoundBigrams) {
+            assertTrue(VietnameseDictionary.isPhonotacticallyValidVietnameseSyllable(k), "Bigram key '$k' must pass phonotactic check")
+            assertTrue(dict.isValidVietnameseSyllable(k), "Bigram key '$k' must be in valid syllableSet")
+            for (v in values) {
+                for (syl in v.split(" ")) {
+                    assertTrue(VietnameseDictionary.isPhonotacticallyValidVietnameseSyllable(syl), "Bigram value '$syl' (from '$v') must pass phonotactic check")
+                    assertTrue(dict.isValidVietnameseSyllable(syl), "Bigram value '$syl' (from '$v') must be in valid syllableSet")
+                }
+            }
+        }
+        for (w in VietnameseDictionaryCorpus.priorityMap.keys) {
+            assertTrue(VietnameseDictionary.isPhonotacticallyValidVietnameseSyllable(w), "Priority word '$w' must pass phonotactic check")
+            assertTrue(dict.isValidVietnameseSyllable(w), "Priority word '$w' must be in valid syllableSet")
+        }
+    }
+
+    // 24. Stage 1: LEX-04 Homograph Disambiguation in V mode
+    @Test
+    fun testStage1Lex04HomographDisambiguation() {
+        val phrases = listOf(
+            "camr own " to "cảm ơn ",
+            "raats its " to "rất ít ",
+            "taams lots " to "tấm lót ",
+            "low laf " to "lơ là ",
+            "cais now " to "cái nơ ",
+            "my own " to "my own ",
+            "on its " to "on its ",
+            "its value " to "its value ",
+            "right now " to "right now ",
+            "very low " to "very low ",
+            "it seems " to "it seems "
+        )
+        for ((input, expected) in phrases) {
+            val screen = VirtualScreen()
+            screen.typeASCII(input)
+            assertEquals(expected, screen.text, "Typing '$input' must produce '$expected'")
+        }
+    }
+
+    // 25. Stage 1: PAR-01 -ng Inline Tone Indexing & Existing Stem-Tone Checks
+    @Test
+    fun testStage1Par01NgInlineToneIndexing() {
+        val dict = VietnameseDictionary.shared
+        assertEquals("hòng", dict.telexKeyToSyllable["honfg"])
+        assertNull(dict.telexKeyToSyllable["hofg"])
+        assertEquals("hồng", dict.telexKeyToSyllable["hoonfg"])
+        assertNull(dict.telexKeyToSyllable["hoofg"])
+        assertEquals("hồng", dict.telexKeyToSyllable["hoongf"])
+        assertEquals("đồng", dict.telexKeyToSyllable["ddoongf"])
+        assertEquals("hòng", dict.telexKeyToSyllable["hongf"])
+        assertEquals("đất", dict.stemToneToSyllable["daats"])
+
+        val daatsScreen = VirtualScreen()
+        daatsScreen.typeASCII("daats ")
+        assertEquals("đất ", daatsScreen.text)
+
+        val tuwnfxScreen = VirtualScreen()
+        tuwnfxScreen.typeASCII("tuwnfx ")
+        assertTrue(tuwnfxScreen.text == "tững " || tuwnfxScreen.text == "từng ")
+    }
+
+    // 26. Stage 2B: PAR-02 Phonotactics (-c/-p stop-coda tones, Q guard quơi, KEY_U hươu, isIeuYeu kiểu)
+    @Test
+    fun testStage2BPar02StopCodaQGuardKeyUAndIeuYeu() {
+        // -c / -p stop-coda tone rules: only sắc (s) and nặng (j) are valid
+        val stopCodaInvalid = listOf(
+            "bofc " to "bofc ",
+            "bofp " to "bofp ",
+            "borc " to "borc ",
+            "boxp " to "boxp "
+        )
+        for ((input, expected) in stopCodaInvalid) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Invalid stop-coda tone '$input' must restore to '$expected'")
+        }
+        val stopCodaValid = listOf(
+            "bocs " to "bóc ",
+            "bocj " to "bọc ",
+            "bops " to "bóp ",
+            "bopj " to "bọp "
+        )
+        for ((input, expected) in stopCodaValid) {
+            val s = VirtualScreen()
+            s.typeASCII(input)
+            assertEquals(expected, s.text, "Valid stop-coda tone '$input' must produce '$expected'")
+        }
+
+        // Q guard in checkGrammar: quơi must stay quơi (never qươi) both mid-word and after Space
+        val quoiScreen = VirtualScreen()
+        quoiScreen.typeASCII("quowi")
+        assertEquals("quơi", VietnameseEngine.getComposedWord(), "Q guard must keep mid-word 'quowi' as 'quơi'")
+        quoiScreen.typeChar(' ')
+        assertEquals("quơi ", quoiScreen.text, "Q guard must keep 'quowi ' as 'quơi '")
+
+        val quoisScreen = VirtualScreen()
+        quoisScreen.typeASCII("quowis")
+        assertEquals("quới", VietnameseEngine.getComposedWord(), "Q guard must keep mid-word 'quowis' as 'quới'")
+        quoisScreen.typeChar(' ')
+        assertEquals("quới ", quoisScreen.text)
+
+        // KEY_U coda propagation: huwou -> hươu mid-word (via checkGrammar) and on Space
+        val huouScreen = VirtualScreen()
+        huouScreen.typeASCII("huwou")
+        assertEquals("hươu", huouScreen.text, "KEY_U propagation in checkGrammar must turn 'huwou' into 'hươu' before Space")
+        assertEquals("hươu", VietnameseEngine.getComposedWord())
+        huouScreen.typeChar(' ')
+        assertEquals("hươu ", huouScreen.text, "KEY_U propagation must turn 'huwou ' into 'hươu '")
+
+        // isIeuYeu: kieur -> kiểu, tieur -> tiểu, yeur -> yểu both with grammarRepair=false and grammarRepair=true
+        val ieuYeuCases = listOf(
+            "kieur " to "kiểu ",
+            "kieeur " to "kiểu ",
+            "tieur " to "tiểu ",
+            "yeur " to "yểu "
+        )
+        try {
+            for (repairEnabled in listOf(false, true)) {
+                AutoWordingEngine.shared.syncConfig(
+                    isEnabled = repairEnabled,
+                    grammarRepair = repairEnabled,
+                    shorthandExpansion = false,
+                    candidateSuggestions = false,
+                    doubleSpacePeriod = false
+                )
+                for ((input, expected) in ieuYeuCases) {
+                    val s = VirtualScreen()
+                    s.typeASCII(input)
+                    assertEquals(expected, s.text, "isIeuYeu (grammarRepair=$repairEnabled) for '$input' must produce '$expected'")
+                }
+            }
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+    }
+
+    // 27. Stage 2B: AND-01 Conservative Suggest-Only Spacebar (Issue #1)
+    @Test
+    fun testStage2BAnd01ConservativeSuggestOnlySpacebar() {
+        fun verifyWordsWithGrammarRepair(enabled: Boolean) {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = enabled,
+                grammarRepair = enabled,
+                shorthandExpansion = enabled,
+                candidateSuggestions = true,
+                doubleSpacePeriod = false
+            )
+            // Valid syllables must NEVER be overwritten
+            for ((input, expected) in listOf(
+                "xoas " to "xoá ",
+                "kieur " to "kiểu ",
+                "kieeur " to "kiểu ",
+                "loas " to "loá ",
+                "toas " to "toá ",
+                "xias " to "xía "
+            )) {
+                val s = VirtualScreen()
+                s.typeASCII(input)
+                assertEquals(expected, s.text, "Valid syllable '$input' (grammarRepair=$enabled) must stay '$expected'")
+            }
+
+            // Plausible Vietnamese-onset/phonotactics unknown words must NOT be overwritten by fuzzy Class 1-4 guesses
+            for ((input, expected) in listOf(
+                "kias " to "kía ",
+                "maos " to "máo ",
+                "blablabla " to "blablabla "
+            )) {
+                val s = VirtualScreen()
+                s.typeASCII(input)
+                assertEquals(expected, s.text, "Plausible/unknown word '$input' (grammarRepair=$enabled) must NOT be silently overwritten")
+            }
+
+            // Deterministic AC-027.3 repairs must still auto-complete
+            for ((input, expected) in listOf(
+                "daats " to "đất ",
+                "ngiax " to "nghĩa ",
+                "luongf " to "lường "
+            )) {
+                val s = VirtualScreen()
+                s.typeASCII(input)
+                assertEquals(expected, s.text, "Deterministic repair '$input' (grammarRepair=$enabled) must produce '$expected'")
+            }
+            val tuwnfxScreen = VirtualScreen()
+            tuwnfxScreen.typeASCII("tuwnfx ")
+            assertTrue(tuwnfxScreen.text == "tững " || tuwnfxScreen.text == "từng ")
+        }
+
+        try {
+            verifyWordsWithGrammarRepair(false)
+            verifyWordsWithGrammarRepair(true)
+
+            // Spatial suggestions must still appear in CandidateStripView / AutoWordingEngine
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = true,
+                grammarRepair = true,
+                shorthandExpansion = true,
+                candidateSuggestions = true,
+                doubleSpacePeriod = false
+            )
+            val cands = AutoWordingEngine.shared.computeCandidates(
+                currentSyllable = "kía",
+                rawStem = "kias",
+                previousWord = null,
+                languagePriority = LanguagePriority.VIETNAMESE_FIRST
+            )
+            assertTrue(cands.isNotEmpty(), "Spatial candidates for 'kias' must still appear in AutoWordingEngine.computeCandidates")
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+    }
+
+    // 28. Stage 2B: PAR-03 Single-Backspace Undo, Double-Space Period, and previousWords Reset
+    @Test
+    fun testStage2BPar03UndoDoubleSpacePeriodAndPreviousWordsReset() {
+        // 1. Single-backspace undo: "this " (priority EN word) + Backspace -> "thí"
+        val undoScreen = VirtualScreen()
+        undoScreen.typeASCII("this ")
+        assertEquals("this ", undoScreen.text)
+        val snapUndo = undoScreen.typeKey(VietnameseData.KEY_DELETE.toInt())
+        assertEquals(HookCodeState.WILL_PROCESS, snapUndo.code)
+        assertEquals("thí", undoScreen.text, "Single backspace after auto-restore 'this ' must undo to 'thí'")
+        // Pressing Space again after undo must keep "thí " (undoneRawWord lock)
+        undoScreen.typeChar(' ')
+        assertEquals("thí ", undoScreen.text, "Undone word must not re-restore on immediate Space")
+
+        // 2. "was\n" + Backspace must NOT trigger undo (trailingCount == 0)
+        val enterScreen = VirtualScreen()
+        enterScreen.typeASCII("was")
+        enterScreen.typeKey(VietnameseData.KEY_RETURN.toInt())
+        val textBeforeDel = enterScreen.text
+        val snapAfterEnter = enterScreen.typeKey(VietnameseData.KEY_DELETE.toInt())
+        assertEquals(HookCodeState.DO_NOTHING, snapAfterEnter.code, "Backspace after Enter must NOT trigger auto-restore undo")
+        assertEquals(textBeforeDel.dropLast(1), enterScreen.text)
+
+        // 3. doubleSpacePeriodEnabled ("xin chao  " within 500ms -> "xin chào. ")
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = true
+        )
+        try {
+            val dspScreen = VirtualScreen()
+            dspScreen.typeASCII("xin chaof  ")
+            assertEquals("xin chào. ", dspScreen.text, "Double space within 500ms must produce 'xin chào. '")
+            // 3rd space must not turn into ".. "
+            dspScreen.typeChar(' ')
+            assertEquals("xin chào.  ", dspScreen.text)
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+
+        // 4. previousWords reset on symbols / multi-space:
+        // "good. sex " -> symbol '.' clears English context so "sex " stays "sẽ " in V-first
+        val symScreen = VirtualScreen()
+        symScreen.typeASCII("good. sex ")
+        assertEquals("good. sẽ ", symScreen.text, "Symbol '.' must reset previousWords so 'sex ' stays 'sẽ '")
+
+        // "good  sex " -> double space clears English context so "sex " stays "sẽ "
+        val multiSpaceScreen = VirtualScreen()
+        multiSpaceScreen.typeASCII("good  sex ")
+        assertEquals("good  sẽ ", multiSpaceScreen.text, "Multi-space must reset previousWords so 'sex ' stays 'sẽ '")
+
+        // 5. Duplicate English word collapse gated on grammarRepairEnabled (K4)
+        try {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = true,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+            val dupOff = VirtualScreen()
+            dupOff.typeASCII("and and ")
+            assertEquals("and and ", dupOff.text, "Duplicate collapse must be suppressed when grammarRepair=false")
+
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = true,
+                grammarRepair = true,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+            val dupOn = VirtualScreen()
+            dupOn.typeASCII("and and ")
+            assertEquals("and ", dupOn.text, "Duplicate collapse must trigger when grammarRepair=true")
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
+    }
 }
 
 

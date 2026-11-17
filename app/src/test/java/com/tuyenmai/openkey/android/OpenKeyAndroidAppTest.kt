@@ -52,6 +52,7 @@ class OpenKeyAndroidAppTest {
         var selectionStart = 0
         var selectionEnd = 0
         var textBeforeCursor = ""
+        var selectedText: CharSequence? = null
         var extractedText: ExtractedText? = null
         var getExtractedTextCallCount = 0
         val sentKeyEvents = mutableListOf<KeyEvent>()
@@ -104,7 +105,7 @@ class OpenKeyAndroidAppTest {
 
         override fun performEditorAction(editorAction: Int): Boolean = true
         override fun getTextAfterCursor(n: Int, flags: Int): CharSequence? = null
-        override fun getSelectedText(flags: Int): CharSequence? = null
+        override fun getSelectedText(flags: Int): CharSequence? = selectedText
         override fun getCursorCapsMode(reqModes: Int): Int = 0
         override fun deleteSurroundingTextInCodePoints(beforeLength: Int, afterLength: Int): Boolean = true
         override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean = true
@@ -647,5 +648,82 @@ class OpenKeyAndroidAppTest {
         ).firstOrNull { it.exists() }
         assertNotNull("Sources/OpenKey/shared-data/vietnamese_syllables.txt must exist", syllablesFile)
         assertTrue("vietnamese_syllables.txt must be non-empty", syllablesFile!!.length() > 0)
+    }
+
+    // 16. Stage 2B: InputConnectionCommitter Selection Delete, Surrogate Backspace, Word Delete Cursor Sync & App Wiring
+    @Test
+    fun testStage2BInputConnectionSelectionSurrogateAndAppWiring() {
+        val mockIc = MockInputConnection()
+        val coordinator = BatchReplacementCoordinator()
+        coordinator.resetExpectedSelection(2, 5)
+        val committer = InputConnectionCommitter(mockIc, coordinator)
+
+        // Selection delete
+        mockIc.selectedText = "abc"
+        assertTrue("deleteSelectionIfAny must delete non-empty selection", committer.deleteSelectionIfAny())
+        assertEquals(2, coordinator.expectedCursorPosition)
+        assertEquals(2, coordinator.currentSelEnd)
+
+        // Surrogate pair backspace
+        mockIc.selectedText = null
+        mockIc.textBeforeCursor = "hi\uD83D\uDE00"
+        mockIc.deletedBefore = 0
+        val deletedSurrogate = committer.deleteSingleBackward()
+        assertEquals("Surrogate pair emoji must delete 2 UTF-16 code units", 2, deletedSurrogate)
+        assertEquals(2, mockIc.deletedBefore)
+
+        // ASCII single backspace
+        mockIc.textBeforeCursor = "hi"
+        mockIc.deletedBefore = 0
+        val deletedAscii = committer.deleteSingleBackward()
+        assertEquals(1, deletedAscii)
+        assertEquals(1, mockIc.deletedBefore)
+
+        // deletePreviousWord updates expectedCursorPosition
+        coordinator.resetExpectedCursor(11, knownSelection = true)
+        mockIc.textBeforeCursor = "hello world"
+        assertTrue(committer.deletePreviousWord())
+        assertEquals("deletePreviousWord must update expectedCursorPosition", 6, coordinator.expectedCursorPosition)
+
+        // sendEnterKey sends KEYCODE_ENTER
+        mockIc.sentKeyEvents.clear()
+        assertTrue(committer.sendEnterKey())
+        assertTrue(mockIc.sentKeyEvents.any { it.keyCode == KeyEvent.KEYCODE_ENTER })
+
+        // Verify KeyButton, KeyboardScreen, OpenKeyImeService, SettingsActivity Stage 2B wiring
+        val keyButtonFile = listOf(
+            File("src/main/java/com/tuyenmai/openkey/android/ui/KeyButton.kt"),
+            File("app/src/main/java/com/tuyenmai/openkey/android/ui/KeyButton.kt")
+        ).first { it.exists() }
+        val keyButtonText = keyButtonFile.readText()
+        assertTrue(keyButtonText.contains("rememberUpdatedState"))
+        assertTrue(keyButtonText.contains("stableTouchIdentity"))
+        assertTrue(keyButtonText.contains("HapticFeedbackConstants.LONG_PRESS"))
+        assertTrue(keyButtonText.contains("showInputMethodPicker"))
+
+        val screenFile = listOf(
+            File("src/main/java/com/tuyenmai/openkey/android/ui/KeyboardScreen.kt"),
+            File("app/src/main/java/com/tuyenmai/openkey/android/ui/KeyboardScreen.kt")
+        ).first { it.exists() }
+        val screenText = screenFile.readText()
+        assertTrue(screenText.contains("addCandidatesListener"))
+        assertTrue(screenText.contains("removeCandidatesListener"))
+        assertFalse(screenText.contains("onCandidatesChanged = null"))
+
+        val settingsFile = listOf(
+            File("src/main/java/com/tuyenmai/openkey/android/settings/SettingsActivity.kt"),
+            File("app/src/main/java/com/tuyenmai/openkey/android/settings/SettingsActivity.kt")
+        ).first { it.exists() }
+        assertTrue(settingsFile.readText().contains("doubleSpacePeriodEnabled"))
+
+        val imeServiceFile = listOf(
+            File("src/main/java/com/tuyenmai/openkey/android/ime/OpenKeyImeService.kt"),
+            File("app/src/main/java/com/tuyenmai/openkey/android/ime/OpenKeyImeService.kt")
+        ).first { it.exists() }
+        val imeText = imeServiceFile.readText()
+        assertTrue(imeText.contains("override fun onStartInput("))
+        assertTrue(imeText.contains("override fun onFinishInput("))
+        assertTrue(imeText.contains("getCursorCapsMode"))
+        assertTrue(imeText.contains("VietnameseEngine.syncConfig("))
     }
 }

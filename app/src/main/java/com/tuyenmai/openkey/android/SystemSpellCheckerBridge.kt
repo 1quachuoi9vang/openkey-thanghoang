@@ -9,6 +9,7 @@ import android.view.textservice.TextServicesManager
 import com.tuyenmai.openkey.core.AutoWordingEngine
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -16,12 +17,16 @@ import java.util.concurrent.atomic.AtomicReference
  * Caches local system dictionary suggestions for English words with zero network permissions.
  */
 class SystemSpellCheckerBridge(
-    private val context: Context
+    private val context: Context,
+    private val onSuggestionsAvailable: ((String, List<String>) -> Unit)? = null
 ) : AutoWordingEngine.SpellCheckerBridge, SpellCheckerSession.SpellCheckerSessionListener {
+
+    private data class InFlightRequest(val generation: Long, val word: String)
 
     private val cache = ConcurrentHashMap<String, List<String>>()
     private var session: SpellCheckerSession? = null
-    private val inFlightWord = AtomicReference<String?>(null)
+    private val requestCounter = AtomicLong(0L)
+    private val inFlightRequest = AtomicReference<InFlightRequest?>(null)
 
     init {
         runCatching {
@@ -39,7 +44,8 @@ class SystemSpellCheckerBridge(
 
         // Request local system spellchecker suggestions
         runCatching {
-            inFlightWord.set(lower)
+            val gen = requestCounter.incrementAndGet()
+            inFlightRequest.set(InFlightRequest(gen, lower))
             session?.getSuggestions(TextInfo(word), maxCount)
         }
 
@@ -48,45 +54,45 @@ class SystemSpellCheckerBridge(
 
     override fun onGetSuggestions(results: Array<out SuggestionsInfo>?) {
         if (results == null) return
-        val currentWord = inFlightWord.getAndSet(null) ?: return
+        val req = inFlightRequest.getAndSet(null) ?: return
+        if (req.generation != requestCounter.get()) return
+        val list = mutableListOf<String>()
         for (info in results) {
             val count = info.suggestionsCount
-            if (count > 0) {
-                val list = mutableListOf<String>()
-                for (i in 0 until count) {
-                    val s = info.getSuggestionAt(i)
-                    if (!s.isNullOrBlank()) {
-                        list.add(s)
-                    }
-                }
-                if (list.isNotEmpty()) {
-                    cache[currentWord] = list
+            for (i in 0 until count) {
+                val s = info.getSuggestionAt(i)
+                if (!s.isNullOrBlank() && !list.contains(s)) {
+                    list.add(s)
                 }
             }
+        }
+        if (list.isNotEmpty()) {
+            cache[req.word] = list
+            onSuggestionsAvailable?.invoke(req.word, list)
         }
     }
 
     override fun onGetSentenceSuggestions(results: Array<out SentenceSuggestionsInfo>?) {
         if (results == null) return
-        val currentWord = inFlightWord.getAndSet(null) ?: return
+        val req = inFlightRequest.getAndSet(null) ?: return
+        if (req.generation != requestCounter.get()) return
+        val list = mutableListOf<String>()
         for (sentenceInfo in results) {
             val length = sentenceInfo.suggestionsCount
             for (i in 0 until length) {
                 val info = sentenceInfo.getSuggestionsInfoAt(i)
                 val count = info.suggestionsCount
-                if (count > 0) {
-                    val list = mutableListOf<String>()
-                    for (j in 0 until count) {
-                        val s = info.getSuggestionAt(j)
-                        if (!s.isNullOrBlank()) {
-                            list.add(s)
-                        }
-                    }
-                    if (list.isNotEmpty()) {
-                        cache[currentWord] = list
+                for (j in 0 until count) {
+                    val s = info.getSuggestionAt(j)
+                    if (!s.isNullOrBlank() && !list.contains(s)) {
+                        list.add(s)
                     }
                 }
             }
+        }
+        if (list.isNotEmpty()) {
+            cache[req.word] = list
+            onSuggestionsAvailable?.invoke(req.word, list)
         }
     }
 

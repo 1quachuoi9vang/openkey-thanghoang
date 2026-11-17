@@ -473,51 +473,14 @@ class AutoWordingEngine private constructor() {
         isInsertingMark: Boolean
     ): Boolean {
         if (!isEnabled || !grammarRepairEnabled) return false
-        var repaired = false
-        val vsi = vowelStartIndex
-        val vei = vowelEndIndex
-
-        fun charAt(idx: Int): UShort = (typingWord[idx] and 0xFFFFu).toUShort()
-
-        val hasFinalConsonant = (index - 1 > vei) && VietnameseData.isConsonant(charAt(vei + 1))
-        if (!hasFinalConsonant) return false
-
-        // Rule 1: ie/ye + final consonant -> iê/yê
-        if (vei >= 1) {
-            val prev = charAt(vei - 1)
-            val curr = charAt(vei)
-            if ((prev == KEY_I || prev == KEY_Y) && curr == KEY_E) {
-                val prevIdx = vei - 1
-                val currIdx = vei
-                val hasToneOrInserting = isInsertingMark ||
-                        (typingWord[prevIdx] and MARK_MASK) != 0u ||
-                        (typingWord[currIdx] and MARK_MASK) != 0u
-                if (hasToneOrInserting && (typingWord[vei] and TONE_MASK) == 0u) {
-                    typingWord[vei] = typingWord[vei] or (TONE_MASK or AUTO_TONE_MASK)
-                    repaired = true
-                }
-            }
-        }
-
-        // Rule 2: uow -> ươ
-        if (vei >= vsi + 1) {
-            for (i in vsi until vei) {
-                val c1 = charAt(i)
-                val c2 = charAt(i + 1)
-                if (c1 == KEY_U && c2 == KEY_O) {
-                    if (i > 0 && charAt(i - 1) == KEY_Q) continue
-                    val m1 = typingWord[i] and TONEW_MASK
-                    val m2 = typingWord[i + 1] and TONEW_MASK
-                    if ((m1 != 0u || m2 != 0u) && (m1 == 0u || m2 == 0u)) {
-                        if (m1 == 0u) typingWord[i] = typingWord[i] or (TONEW_MASK or AUTO_TONE_MASK)
-                        if (m2 == 0u) typingWord[i + 1] = typingWord[i + 1] or (TONEW_MASK or AUTO_TONE_MASK)
-                        repaired = true
-                    }
-                }
-            }
-        }
-
-        return repaired
+        return repairPhonotacticClusterCore(
+            typingWord = typingWord,
+            index = index,
+            vowelStartIndex = vowelStartIndex,
+            vowelEndIndex = vowelEndIndex,
+            isInsertingMark = isInsertingMark,
+            allowClusterRules1And2 = true
+        )
     }
 
     fun interceptBeforeKeyEvent(

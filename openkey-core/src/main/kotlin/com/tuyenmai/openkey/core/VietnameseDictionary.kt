@@ -35,17 +35,6 @@ class VietnameseDictionary private constructor() {
 
         private val U_HORN_CHARS = setOf('ư', 'ứ', 'ừ', 'ử', 'ữ', 'ự')
         private val O_HORN_CHARS = setOf('ơ', 'ớ', 'ờ', 'ở', 'ỡ', 'ợ')
-        private val FAKE_D_SHADOWS = setOf("dất", "dến", "diểm", "dồng", "dứng", "dể", "dữa")
-        private val HALF_HORN_UO_REGEX = Regex("u[ơớờởỡợ](ng|nh|ch|[cmnptui])")
-        private val UNHORNED_UO_REGEX = Regex("^(?!qu[ơớờởỡợ]|(?:th|kh|h)u[ơớờởỡợ]$).*?u[ơớờởỡợ]")
-        private val GH_NGH_INVALID = Regex("^(gh|ngh)[aăâoôơuưyáắấóốớúứýàằầòồờùừỳảẳẩỏổởủửỷãẵẫõỗỡũữỹạặậọộợụựỵ]")
-        private val G_NG_INVALID = Regex("^g[eêèềéếẻểẽễẹệ]|^ng[eêièềìéếíẻểỉẽễĩẹệị]")
-        private val K_INVALID = Regex("^k[aăâoôơuưáắấóốớúứàằầòồờùừảẳẩỏổởủửãẵẫõỗỡũữạặậọộợụự]|^ky[a-zà-ỹ]")
-        private val C_INVALID = Regex("^c(?!h)[eêiyèềìỳéếíýẻểỉỷẽễĩỹẹệịỵ]|^chy[a-zà-ỹ]")
-        private val YE_INVALID = Regex("^(?:b|ch|d|đ|g|gh|gi|h|k|kh|l|m|n|ng|ngh|nh|p|ph|r|s|t|th|tr|v|x)y[êếềểễệ]")
-        private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|(?<=.)[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$")
-        private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:oa|oă|oe|uê|uy|uâ)|^giu[ôốồổỗộâấầẩẫậêếềểễệyýỳỷỹỵ]")
-        private val NHIA_INVALID = Regex("^nh[iíìỉĩị][aáàảãạ]$|^nhĩa$")
 
         val shared by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { VietnameseDictionary() }
         @Volatile var isPrewarmed: Boolean = false
@@ -150,8 +139,8 @@ class VietnameseDictionary private constructor() {
                 }
             }
             if (body.endsWith("ng")) {
-                val withoutN = body.dropLast(2) + tone + "g"
-                if (!variants.contains(withoutN)) variants.add(withoutN)
+                val withToneBetweenNG = body.dropLast(1) + tone + "g"
+                if (!variants.contains(withToneBetweenNG)) variants.add(withToneBetweenNG)
             }
             return variants
         }
@@ -169,42 +158,17 @@ class VietnameseDictionary private constructor() {
             return lower
         }
 
-        val VALID_VIETNAMESE_ONSETS: Set<String> = setOf("", "b", "c", "ch", "d", "dd", "g", "gh", "gi", "h", "k", "kh", "l", "m", "n", "ng", "ngh", "nh", "p", "ph", "qu", "r", "s", "t", "th", "tr", "v", "x")
-        val ORTHO_ONSET_PAIRS: Map<String, String> = mapOf("ng" to "ngh", "g" to "gh", "gh" to "g", "ngh" to "ng", "c" to "k", "k" to "c")
+        val VALID_VIETNAMESE_ONSETS: Set<String> = VietnamesePhonotacticsValidator.VALID_VIETNAMESE_ONSETS
+        val ORTHO_ONSET_PAIRS: Map<String, String> = VietnamesePhonotacticsValidator.ORTHO_ONSET_PAIRS
 
-        fun hasValidVietnameseOnset(rawLower: String): Boolean {
-            val onset = if (rawLower.startsWith("qu")) "qu" else rawLower.takeWhile { it !in "aeiouy" }
-            val rest = rawLower.drop(onset.length)
-            if (onset == "ng" && (rest.startsWith("i") || rest.startsWith("e"))) return false
-            if (onset == "g" && rest.startsWith("e")) return false
-            if ((onset == "gh" || onset == "ngh") && (rest.startsWith("a") || rest.startsWith("o") || rest.startsWith("u"))) return false
-            if (onset == "c" && (rest.startsWith("i") || rest.startsWith("e") || rest.startsWith("y"))) return false
-            if (onset == "k" && (rest.startsWith("a") || rest.startsWith("o") || rest.startsWith("u"))) return false
-            return onset in VALID_VIETNAMESE_ONSETS
-        }
+        fun hasValidVietnameseOnset(rawLower: String): Boolean =
+            VietnamesePhonotacticsValidator.hasValidVietnameseOnset(rawLower)
 
-        private val validOeOnsets: Set<String> = setOf("", "ch", "h", "kh", "l", "ng", "nh", "t", "x", "gi", "qu")
-        private fun isValidOeSyllable(word: String): Boolean {
-            val stem = stripVietnameseDiacritics(word)
-            if (!stem.contains("oe")) return true
-            val onset = stem.takeWhile { it !in "aeiouy" }
-            return validOeOnsets.contains(onset)
-        }
+        private fun isValidOeSyllable(word: String): Boolean =
+            VietnamesePhonotacticsValidator.isValidOeSyllable(word)
 
-        fun isPhonotacticallyValidVietnameseSyllable(word: String): Boolean {
-            val lower = word.lowercase()
-            if (lower.isEmpty() || FAKE_D_SHADOWS.contains(lower)) return false
-            if (HALF_HORN_UO_REGEX.containsMatchIn(lower) || UNHORNED_UO_REGEX.containsMatchIn(lower)) return false
-            if (GH_NGH_INVALID.containsMatchIn(lower) || G_NG_INVALID.containsMatchIn(lower)) return false
-            if (K_INVALID.containsMatchIn(lower) || C_INVALID.containsMatchIn(lower)) return false
-            if (YE_INVALID.containsMatchIn(lower) || INVALID_RHYMES.containsMatchIn(lower) || LABIAL_MEDIALS.containsMatchIn(lower)) return false
-            if (NHIA_INVALID.matches(lower)) return false
-            val lastCoda = lower.last()
-            if (lastCoda == 'c' || lastCoda == 'p' || lastCoda == 't' || lower.endsWith("ch")) {
-                if (!lower.any { it in "áắấéếíóốớúứýạặậẹệịọộợụựỵ" }) return false
-            }
-            return true
-        }
+        fun isPhonotacticallyValidVietnameseSyllable(word: String): Boolean =
+            VietnamesePhonotacticsValidator.isPhonotacticallyValidVietnameseSyllable(word)
 
         fun isValidVietnameseSyllable(word: String): Boolean = shared.isValidVietnameseSyllable(word)
         fun isEnglishWord(lower: String): Boolean = shared.isEnglishWord(lower)
@@ -489,7 +453,11 @@ class VietnameseDictionary private constructor() {
     fun computeEnglishNextWordCandidates(previousWord: String, maxCount: Int = 3): List<String> =
         previousWord.trim().lowercase().let { if (it.isEmpty()) emptyList() else (englishNextWordBigrams[it] ?: emptyList()).take(maxCount) }
 
-    fun isValidVietnameseSyllable(word: String): Boolean = syllableSet.contains(word.lowercase())
+    fun isValidVietnameseSyllable(word: String): Boolean {
+        val lower = word.lowercase()
+        if (!isPhonotacticallyValidVietnameseSyllable(lower)) return false
+        return syllableSet.contains(lower)
+    }
 
     fun isEnglishPriorityWord(rawAscii: String): Boolean = englishPriorityWords.contains(rawAscii.lowercase())
 

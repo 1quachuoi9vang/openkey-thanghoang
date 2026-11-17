@@ -90,6 +90,7 @@ class VietnameseEngineState {
     var autoRestoreUndoState: AutoRestoreUndoSnapshot? = null
     var undoneRawWord: String? = null
     var lastSpaceUptime: Double = 0.0
+    var currentTimeMsProvider: () -> Long = { System.currentTimeMillis() }
     var sentenceEndedWithPunctuation: Boolean = false
 
     fun effectiveLanguagePriority(): LanguagePriority = BilingualAutoSwitchEngine.effectiveLanguagePriority(this)
@@ -261,6 +262,7 @@ class VietnameseEngineState {
         consecutiveEnglishWordCount = 0
         autoRestoreUndoState = null
         undoneRawWord = null
+        lastSpaceUptime = 0.0
         sentenceEndedWithPunctuation = false
         AutoWordingEngine.shared.clearCandidates()
 
@@ -678,7 +680,9 @@ class VietnameseEngineState {
     }
 
     fun handleWordBreakOrControlKey(keyCode: UShort, capsStatus: Int) {
+        autoRestoreUndoState = null
         sentenceEndedWithPunctuation = false
+        lastSpaceUptime = 0.0
         hookOutput.code = HookCodeState.DO_NOTHING
         hookOutput.backspaceCount = 0
         hookOutput.newCharCount = 0
@@ -714,8 +718,16 @@ class VietnameseEngineState {
         if (!isCharKeyCode) {
             specialChar.clear()
             typingStates.clear()
+            previousWords.clear()
+            consecutiveEnglishWordCount = 0
             wordStartOk = true
         } else {
+            if (index == 0) {
+                previousWords.clear()
+                if (keyCode != KEY_COMMA) {
+                    consecutiveEnglishWordCount = 0
+                }
+            }
             if (spaceCount > 0) {
                 saveWord(KEY_SPACE.toUInt(), spaceCount)
                 spaceCount = 0
@@ -740,6 +752,7 @@ class VietnameseEngineState {
 
     fun handleSpaceKey() {
         if (spaceCount == 0) {
+            autoRestoreUndoState = null
             if (!tempDisableKey && vCheckSpelling != 0) {
                 checkSpelling(forceCheckVowel = true)
             }
@@ -752,12 +765,18 @@ class VietnameseEngineState {
                 hookOutput.code = HookCodeState.DO_NOTHING
                 spaceCount++
             }
+            lastSpaceUptime = currentTimeMsProvider().toDouble()
         } else {
+            autoRestoreUndoState = null
+            if (BilingualAutoSwitchEngine.handleDoubleSpacePeriod(this)) {
+                spaceCount++
+                return
+            }
             hookOutput.code = HookCodeState.DO_NOTHING
             spaceCount++
-            if (previousWords.isNotEmpty()) {
-                previousWords.last().trailingSpaces = spaceCount
-            }
+            lastSpaceUptime = 0.0
+            previousWords.clear()
+            consecutiveEnglishWordCount = 0
         }
 
         if (spaceCount == 1) {
@@ -780,6 +799,8 @@ class VietnameseEngineState {
     }
 
     fun handleDeleteKey() {
+        if (BilingualAutoSwitchEngine.handleSingleBackspaceUndo(this)) return
+        lastSpaceUptime = 0.0
         hookOutput.code = HookCodeState.DO_NOTHING
         hookOutput.extCode = 2 // Delete
         if (specialChar.isNotEmpty()) {
@@ -850,6 +871,8 @@ class VietnameseEngineState {
     }
 
     fun handleCharacterKey(keyCode: UShort) {
+        autoRestoreUndoState = null
+        lastSpaceUptime = 0.0
         if (willTempOffEngine) {
             hookOutput.code = HookCodeState.DO_NOTHING
             hookOutput.extCode = 3

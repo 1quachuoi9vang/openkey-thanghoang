@@ -1,7 +1,10 @@
 package com.tuyenmai.openkey.android.ui
 
+import android.content.Context
 import android.view.HapticFeedbackConstants
+import android.view.inputmethod.InputMethodManager
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -19,9 +22,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -331,7 +337,7 @@ object KeyboardVectorIcons {
  */
 @Composable
 fun KeyButton(
-    key: KeyModel,
+    keyItem: KeyModel,
     metrics: ComputedKeyboardMetrics,
     palette: ThemePalette,
     hapticFeedbackEnabled: Boolean,
@@ -344,25 +350,34 @@ fun KeyButton(
     isShiftActive: Boolean = false,
     isCapsLocked: Boolean = false
 ) {
+    val currentKey by rememberUpdatedState(keyItem)
+    val key = keyItem.stableTouchIdentity
+    val currentOnKeyPressed by rememberUpdatedState(onKeyPressed)
+    val currentOnMoveCursor by rememberUpdatedState(onMoveCursor)
+    val currentOnDeleteWord by rememberUpdatedState(onDeleteWord)
+    val currentHaptics by rememberUpdatedState(hapticFeedbackEnabled)
+
     val theme = palette
     val view = LocalView.current
+    val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
 
     var isPressed by remember { mutableStateOf(false) }
     var showVariantsPopup by remember { mutableStateOf(false) }
     var variantOptions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var selectedVariantIndex by remember { mutableIntStateOf(0) }
     var spacebarTrackpadLabel by remember { mutableStateOf<String?>(null) }
 
     val cornerRadius = metrics.keyCornerRadiusDp.dp
     val gapH = (metrics.keyHorizontalGapDp / 2).dp
     val gapV = (metrics.keyVerticalGapDp / 2).dp
 
-    val isEnterKey = key.action is KeyAction.Enter
-    val isShiftKey = key.action is KeyAction.Shift
-    val isBackspaceKey = key.action is KeyAction.Backspace
-    val isGlobeKey = key.action is KeyAction.SwitchLanguage
-    val isSpaceKey = key.action is KeyAction.Space
+    val isEnterKey = currentKey.action is KeyAction.Enter
+    val isShiftKey = currentKey.action is KeyAction.Shift
+    val isBackspaceKey = currentKey.action is KeyAction.Backspace
+    val isGlobeKey = currentKey.action is KeyAction.SwitchLanguage
+    val isSpaceKey = currentKey.action is KeyAction.Space
 
     val accentColor = Color(theme.accentColor)
 
@@ -370,7 +385,7 @@ fun KeyButton(
         isEnterKey -> {
             if (isPressed) accentColor.copy(alpha = 0.80f) else accentColor
         }
-        key.isFunctional -> {
+        currentKey.isFunctional -> {
             if (isPressed) {
                 Color(theme.pressedFunctionalKeycapColor)
             } else if (isShiftActive && isShiftKey) {
@@ -391,6 +406,8 @@ fun KeyButton(
     val strokeWidthPx = with(density) { 1.dp.toPx() }
     val bevelHeightPx = with(density) { 1.2.dp.toPx() }
     val cornerRadiusPx = with(density) { cornerRadius.toPx() }
+    val variantItemWidthPx = with(density) { 36.dp.toPx() }
+    val longPressMoveSlopPx = with(density) { 12.dp.toPx() }
 
     Box(
         modifier = modifier
@@ -399,8 +416,10 @@ fun KeyButton(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     isPressed = true
+                    val downX = down.position.x
+                    selectedVariantIndex = 0
 
-                    if (hapticFeedbackEnabled) {
+                    if (currentHaptics) {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     }
 
@@ -409,7 +428,7 @@ fun KeyButton(
                     var longPressHandled = false
                     var didRepeatDelete = false
 
-                    when (key.action) {
+                    when (currentKey.action) {
                         is KeyAction.Space -> {
                             gestureController.onSpacebarDown()
                             spacebarTrackpadLabel = null
@@ -420,7 +439,7 @@ fun KeyButton(
                                 delay(400L)
                                 while (isActive) {
                                     didRepeatDelete = true
-                                    onKeyPressed(KeyAction.Backspace)
+                                    currentOnKeyPressed(KeyAction.Backspace)
                                     delay(50L)
                                 }
                             }
@@ -428,15 +447,22 @@ fun KeyButton(
                         else -> {
                             longPressJob = scope.launch {
                                 delay(KeyboardGestureController.LONG_PRESS_TIMEOUT_MS)
-                                val variants = gestureController.resolveLongPressVariants(key.primaryLabel)
-                                if (variants.isNotEmpty()) {
-                                    variantOptions = variants
-                                    showVariantsPopup = true
+                                if (currentKey.action is KeyAction.SwitchLanguage) {
+                                    if (currentHaptics) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                    }
+                                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                                    imm?.showInputMethodPicker()
                                     longPressHandled = true
                                 } else {
-                                    val secondary = key.secondaryLabel
-                                    if (secondary != null) {
-                                        onKeyPressed(KeyAction.CommitChar(secondary))
+                                    val variants = gestureController.resolveLongPressPopupItems(currentKey)
+                                    if (variants.isNotEmpty()) {
+                                        if (currentHaptics) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                                        }
+                                        variantOptions = variants
+                                        selectedVariantIndex = 0
+                                        showVariantsPopup = true
                                         longPressHandled = true
                                     }
                                 }
@@ -455,36 +481,44 @@ fun KeyButton(
                                 break
                             }
 
-                            val dragDeltaX = change.positionChange().x
-                            if (dragDeltaX != 0f) {
-                                val deltaDp = with(density) { dragDeltaX.toDp().value }
+                            if (showVariantsPopup && variantOptions.isNotEmpty()) {
+                                selectedVariantIndex = gestureController.resolvePopupSlideIndex(
+                                    dragOffsetX = change.position.x - downX,
+                                    itemWidthPx = variantItemWidthPx,
+                                    itemCount = variantOptions.size
+                                )
+                            } else {
+                                val dragDeltaX = change.positionChange().x
+                                if (dragDeltaX != 0f) {
+                                    val deltaDp = with(density) { dragDeltaX.toDp().value }
 
-                                when (key.action) {
-                                    is KeyAction.Space -> {
-                                        val actions = gestureController.onSpacebarDrag(deltaDp)
-                                        if (gestureController.isTrackpadActive) {
-                                            spacebarTrackpadLabel = "<  ${key.primaryLabel}  >"
-                                            for (act in actions) {
-                                                if (act is GestureAction.CursorMove) {
-                                                    onMoveCursor(act.steps)
+                                    when (currentKey.action) {
+                                        is KeyAction.Space -> {
+                                            val actions = gestureController.onSpacebarDrag(deltaDp)
+                                            if (gestureController.isTrackpadActive) {
+                                                spacebarTrackpadLabel = "<  ${currentKey.primaryLabel}  >"
+                                                for (act in actions) {
+                                                    if (act is GestureAction.CursorMove) {
+                                                        currentOnMoveCursor(act.steps)
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    is KeyAction.Backspace -> {
-                                        val actions = gestureController.onBackspaceDrag(deltaDp)
-                                        if (gestureController.isSwipeDeleteActive) {
-                                            repeatDeleteJob?.cancel()
-                                            for (act in actions) {
-                                                if (act is GestureAction.DeletePreviousWord) {
-                                                    onDeleteWord()
+                                        is KeyAction.Backspace -> {
+                                            val actions = gestureController.onBackspaceDrag(deltaDp)
+                                            if (gestureController.isSwipeDeleteActive) {
+                                                repeatDeleteJob?.cancel()
+                                                for (act in actions) {
+                                                    if (act is GestureAction.DeletePreviousWord) {
+                                                        currentOnDeleteWord()
+                                                    }
                                                 }
                                             }
                                         }
-                                    }
-                                    else -> {
-                                        if (kotlin.math.abs(dragDeltaX) > 10f) {
-                                            longPressJob?.cancel()
+                                        else -> {
+                                            if (kotlin.math.abs(change.position.x - downX) > longPressMoveSlopPx) {
+                                                longPressJob?.cancel()
+                                            }
                                         }
                                     }
                                 }
@@ -498,23 +532,30 @@ fun KeyButton(
                         spacebarTrackpadLabel = null
                     }
 
-                    when (key.action) {
+                    when (currentKey.action) {
                         is KeyAction.Space -> {
                             val result = gestureController.onSpacebarUp()
                             spacebarTrackpadLabel = null
                             if (result is GestureAction.CommitSpace) {
-                                onKeyPressed(KeyAction.Space)
+                                currentOnKeyPressed(KeyAction.Space)
                             }
                         }
                         is KeyAction.Backspace -> {
                             val result = gestureController.onBackspaceUp()
                             if (result is GestureAction.DeleteSingleChar && !didRepeatDelete) {
-                                onKeyPressed(KeyAction.Backspace)
+                                currentOnKeyPressed(KeyAction.Backspace)
                             }
                         }
                         else -> {
-                            if (!longPressHandled && !showVariantsPopup) {
-                                onKeyPressed(key.action)
+                            if (showVariantsPopup && variantOptions.isNotEmpty()) {
+                                val chosen = variantOptions.getOrNull(selectedVariantIndex)
+                                showVariantsPopup = false
+                                variantOptions = emptyList()
+                                if (chosen != null) {
+                                    currentOnKeyPressed(KeyAction.CommitChar(chosen))
+                                }
+                            } else if (!longPressHandled) {
+                                currentOnKeyPressed(currentKey.action)
                             }
                         }
                     }
@@ -550,7 +591,7 @@ fun KeyButton(
         contentAlignment = Alignment.Center
     ) {
         if (isEnterKey) {
-            KeyboardVectorIcons.EnterActionIcon(actionLabel = key.primaryLabel, tint = Color.White)
+            KeyboardVectorIcons.EnterActionIcon(actionLabel = currentKey.primaryLabel, tint = Color.White)
         } else if (isShiftKey) {
             KeyboardVectorIcons.ShiftIcon(
                 isShifted = isShiftActive,
@@ -561,13 +602,13 @@ fun KeyButton(
             KeyboardVectorIcons.BackspaceIcon(tint = Color(theme.primaryTextColor))
         } else if (isGlobeKey) {
             KeyboardVectorIcons.GlobeLanguageIcon(
-                languageBadge = key.secondaryLabel ?: "VI",
+                languageBadge = currentKey.secondaryLabel ?: "VI",
                 tint = Color(theme.primaryTextColor),
                 accentTint = accentColor
             )
         } else {
             // Secondary symbol sub-label
-            val secondary = key.secondaryLabel
+            val secondary = currentKey.secondaryLabel
             if (secondary != null) {
                 Text(
                     text = secondary,
@@ -582,7 +623,7 @@ fun KeyButton(
 
             // Primary label
             if (isSpaceKey) {
-                val spaceText = if (spacebarTrackpadLabel != null) spacebarTrackpadLabel!! else "‹ ${key.primaryLabel} ›"
+                val spaceText = if (spacebarTrackpadLabel != null) spacebarTrackpadLabel!! else "‹ ${currentKey.primaryLabel} ›"
                 Text(
                     text = spaceText,
                     color = Color(theme.secondaryTextColor),
@@ -590,54 +631,54 @@ fun KeyButton(
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center
                 )
-            } else if (key.isFunctional) {
+            } else if (currentKey.isFunctional) {
                 Text(
-                    text = key.primaryLabel,
+                    text = currentKey.primaryLabel,
                     color = Color(theme.primaryTextColor),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center
                 )
-            } else if (key.primaryLabel.length == 1 && key.primaryLabel[0].isDigit()) {
-                val isLargeNumpad = key.secondaryLabel == null && metrics.alphaRowHeightDp >= 56f
+            } else if (currentKey.primaryLabel.length == 1 && currentKey.primaryLabel[0].isDigit()) {
+                val isLargeNumpad = currentKey.secondaryLabel == null && metrics.alphaRowHeightDp >= 56f
                 Text(
-                    text = key.primaryLabel,
+                    text = currentKey.primaryLabel,
                     color = Color(theme.primaryTextColor),
                     fontSize = if (isLargeNumpad) 26.sp else 20.sp,
                     fontWeight = if (isLargeNumpad) FontWeight.Medium else FontWeight.Normal,
                     textAlign = TextAlign.Center
                 )
-            } else if (key.primaryLabel == "," || key.primaryLabel == ".") {
+            } else if (currentKey.primaryLabel == "," || currentKey.primaryLabel == ".") {
                 Text(
-                    text = key.primaryLabel,
+                    text = currentKey.primaryLabel,
                     color = Color(theme.primaryTextColor),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center
                 )
-            } else if (key.primaryLabel.length == 1 && key.primaryLabel[0].isUpperCase()) {
+            } else if (currentKey.primaryLabel.length == 1 && currentKey.primaryLabel[0].isUpperCase()) {
                 Text(
-                    text = key.primaryLabel,
+                    text = currentKey.primaryLabel,
                     color = Color(theme.primaryTextColor),
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.offset(y = if (key.secondaryLabel != null) 1.dp else 0.dp)
+                    modifier = Modifier.offset(y = if (currentKey.secondaryLabel != null) 1.dp else 0.dp)
                 )
             } else {
                 Text(
-                    text = key.primaryLabel,
+                    text = currentKey.primaryLabel,
                     color = Color(theme.primaryTextColor),
                     fontSize = 23.sp,
                     fontWeight = FontWeight.Normal,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.offset(y = if (key.secondaryLabel != null) 1.dp else 0.dp)
+                    modifier = Modifier.offset(y = if (currentKey.secondaryLabel != null) 1.dp else 0.dp)
                 )
             }
         }
 
         // Floating Key Popup Preview Bubble (One UI style)
-        if (isPressed && keyPopupPreviewEnabled && !key.isFunctional && key.primaryLabel.length == 1) {
+        if (isPressed && keyPopupPreviewEnabled && !currentKey.isFunctional && currentKey.primaryLabel.length == 1) {
             Popup(
                 alignment = Alignment.TopCenter,
                 offset = IntOffset(0, -140),
@@ -654,7 +695,7 @@ fun KeyButton(
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = key.primaryLabel,
+                            text = currentKey.primaryLabel,
                             color = Color(theme.primaryTextColor),
                             fontSize = 28.sp,
                             fontWeight = FontWeight.SemiBold
@@ -664,7 +705,7 @@ fun KeyButton(
             }
         }
 
-        // Long-Press Variant Options Popup
+        // Long-Press Variant Options Popup (hold-slide-release)
         if (showVariantsPopup && variantOptions.isNotEmpty()) {
             Popup(
                 alignment = Alignment.TopCenter,
@@ -678,15 +719,20 @@ fun KeyButton(
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(theme.keyBorderColor))
                 ) {
                     Row(modifier = Modifier.padding(4.dp)) {
-                        variantOptions.forEach { variant ->
+                        variantOptions.forEachIndexed { index, variant ->
+                            val isSelected = index == selectedVariantIndex
                             Box(
                                 modifier = Modifier
-                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                                    .background(
+                                        if (isSelected) accentColor.copy(alpha = 0.20f) else Color.Transparent,
+                                        RoundedCornerShape(6.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
                                     .clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null
                                     ) {
-                                        onKeyPressed(KeyAction.CommitChar(variant))
+                                        currentOnKeyPressed(KeyAction.CommitChar(variant))
                                         showVariantsPopup = false
                                     },
                                 contentAlignment = Alignment.Center
@@ -694,8 +740,8 @@ fun KeyButton(
                                 Text(
                                     text = variant,
                                     fontSize = 20.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color(theme.primaryTextColor)
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) accentColor else Color(theme.primaryTextColor)
                                 )
                             }
                         }

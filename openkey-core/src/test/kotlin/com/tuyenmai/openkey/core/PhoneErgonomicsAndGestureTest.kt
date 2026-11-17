@@ -325,7 +325,8 @@ class PhoneErgonomicsAndGestureTest {
         val controller = KeyboardGestureController()
 
         // Long press threshold constant
-        assertEquals(220L, KeyboardGestureController.LONG_PRESS_TIMEOUT_MS)
+        assertEquals(300L, KeyboardGestureController.LONG_PRESS_TIMEOUT_MS)
+        assertEquals(350L, KeyboardGestureController.DOUBLE_TAP_CAPS_LOCK_WINDOW_MS)
 
         // Vietnamese vowel variants
         val aVariants = controller.resolveLongPressVariants('a')
@@ -507,5 +508,55 @@ class PhoneErgonomicsAndGestureTest {
         assertEquals("Done", r4[3].primaryLabel)
         assertTrue(r4[3].action is KeyAction.Enter)
         assertTrue(r4[3].isFunctional)
+    }
+
+    // Stage 2B RED: AND-04 One UI / Gboard Popups, Slide Index & 350ms Double-Tap CapsLock
+    @Test
+    fun testStage2BAnd04PopupsSlideIndexAndDoubleTapCapsLock() {
+        val controller = KeyboardGestureController()
+
+        // Secondary label at index 0 on a/d/e/i/o/u/y
+        val qwerty = KeyboardLayoutDefinition.getLayer(KeyboardLayer.QWERTY, isShifted = false, language = 1)
+        val allKeys = qwerty.rows.flatMap { it.keys }
+        val expectedSecondaryFirst = mapOf(
+            "a" to "!",
+            "d" to "#",
+            "e" to "÷",
+            "i" to ">",
+            "o" to "[",
+            "u" to "<",
+            "y" to "_"
+        )
+        for ((letter, expectedSym) in expectedSecondaryFirst) {
+            val keyModel = allKeys.first { it.primaryLabel == letter }
+            val popupItems = controller.resolveLongPressPopupItems(keyModel)
+            assertTrue(popupItems.isNotEmpty(), "Popup items for '$letter' must not be empty")
+            assertEquals(expectedSym, popupItems[0], "Index 0 of '$letter' popup must be printed secondaryLabel '$expectedSym'")
+        }
+
+        // '.' key punctuation popup: (? ! , @ / :)
+        val dotKey = allKeys.first { it.primaryLabel == "." }
+        assertEquals(listOf("?", "!", ",", "@", "/", ":"), controller.resolveLongPressPopupItems(dotKey))
+
+        // Slide index helper (including 1.75f midpoint rounding: 70f / 40f -> 2)
+        assertEquals(0, controller.resolvePopupSlideIndex(dragOffsetX = 0f, itemWidthPx = 40f, itemCount = 6))
+        assertEquals(2, controller.resolvePopupSlideIndex(dragOffsetX = 70f, itemWidthPx = 40f, itemCount = 6))
+        assertEquals(2, controller.resolvePopupSlideIndex(dragOffsetX = 82f, itemWidthPx = 40f, itemCount = 6))
+        assertEquals(5, controller.resolvePopupSlideIndex(dragOffsetX = 500f, itemWidthPx = 40f, itemCount = 6))
+        assertEquals(0, controller.resolvePopupSlideIndex(dragOffsetX = -50f, itemWidthPx = 40f, itemCount = 6))
+
+        // 350ms double-tap CapsLock vs > 350ms auto-Shift-off
+        val tap1 = controller.onShiftTap(isShifted = false, isCapsLocked = false, nowMs = 1000L, lastShiftTapMs = 0L)
+        assertTrue(tap1.isShifted && !tap1.isCapsLocked)
+
+        val tap2Within350 = controller.onShiftTap(isShifted = tap1.isShifted, isCapsLocked = tap1.isCapsLocked, nowMs = 1300L, lastShiftTapMs = tap1.lastShiftTapMs)
+        assertTrue(tap2Within350.isShifted && tap2Within350.isCapsLocked, "Double-tap within 350ms must engage CapsLock")
+
+        val tap3FromCaps = controller.onShiftTap(isShifted = tap2Within350.isShifted, isCapsLocked = tap2Within350.isCapsLocked, nowMs = 1600L, lastShiftTapMs = tap2Within350.lastShiftTapMs)
+        assertFalse(tap3FromCaps.isShifted || tap3FromCaps.isCapsLocked, "Tap from CapsLock must turn off Shift/CapsLock")
+
+        // Tap while auto-Shifted (> 350ms) turns Shift OFF instead of engaging CapsLock
+        val tapAutoShiftOff = controller.onShiftTap(isShifted = true, isCapsLocked = false, nowMs = 2000L, lastShiftTapMs = 0L)
+        assertFalse(tapAutoShiftOff.isShifted || tapAutoShiftOff.isCapsLocked, "Tap after > 350ms must turn off Shift instead of CapsLock")
     }
 }

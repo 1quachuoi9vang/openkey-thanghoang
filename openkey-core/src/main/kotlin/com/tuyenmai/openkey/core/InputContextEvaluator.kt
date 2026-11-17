@@ -12,7 +12,8 @@ data class InputEvaluation(
     val enterActionLabel: String,
     val imeActionId: Int = InputContextEvaluator.IME_ACTION_UNSPECIFIED,
     val shouldSendNewlineOnEnter: Boolean = false,
-    val isNumericField: Boolean = false
+    val isNumericField: Boolean = false,
+    val suppressSuggestions: Boolean = false
 )
 
 object InputContextEvaluator {
@@ -35,6 +36,10 @@ object InputContextEvaluator {
     const val TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS = 0xD0
     const val TYPE_TEXT_VARIATION_FILTER = 0xB0
 
+    const val TYPE_TEXT_FLAG_CAP_CHARACTERS = 0x1000
+    const val TYPE_TEXT_FLAG_CAP_WORDS = 0x2000
+    const val TYPE_TEXT_FLAG_CAP_SENTENCES = 0x4000
+    const val TYPE_TEXT_FLAG_CAP_MASK = 0x7000
     const val TYPE_TEXT_FLAG_NO_SUGGESTIONS = 0x80000
     const val TYPE_TEXT_FLAG_MULTI_LINE = 0x20000
     const val IME_FLAG_NO_ENTER_ACTION = 0x40000000
@@ -69,6 +74,7 @@ object InputContextEvaluator {
         val isSecure = isTextPassword || isNumberPassword
 
         var bypass = isSecure
+        val hasNoSuggestions = (context.inputType and TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
         if (!bypass) {
             val isNonText = inputClass == TYPE_CLASS_NUMBER ||
                 inputClass == TYPE_CLASS_PHONE ||
@@ -79,17 +85,15 @@ object InputContextEvaluator {
                 variation == TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
             )
             val isFilter = (inputClass == TYPE_CLASS_TEXT) && (variation == TYPE_TEXT_VARIATION_FILTER)
-            val hasNoSuggestions = (context.inputType and TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0
             val isTerminal = context.packageName.lowercase() in TERMINAL_PACKAGES
 
-            bypass = isNonText || isUri || isEmail || isFilter || hasNoSuggestions || isTerminal
+            bypass = isNonText || isUri || isEmail || isFilter || isTerminal
         }
 
-        val isMultiline = (inputClass == TYPE_CLASS_TEXT) && ((context.inputType and TYPE_TEXT_FLAG_MULTI_LINE) != 0)
         val hasNoEnterAction = (context.imeOptions and IME_FLAG_NO_ENTER_ACTION) != 0
         val action = context.imeOptions and IME_MASK_ACTION
 
-        val shouldSendNewline = isMultiline && (hasNoEnterAction || action == IME_ACTION_UNSPECIFIED || action == IME_ACTION_NONE)
+        val shouldSendNewline = hasNoEnterAction || action == IME_ACTION_UNSPECIFIED || action == IME_ACTION_NONE
 
         val enterActionLabel = if (shouldSendNewline) {
             "↵"
@@ -112,7 +116,15 @@ object InputContextEvaluator {
             enterActionLabel = enterActionLabel,
             imeActionId = action,
             shouldSendNewlineOnEnter = shouldSendNewline,
-            isNumericField = isNumericField
+            isNumericField = isNumericField,
+            suppressSuggestions = hasNoSuggestions || isSecure
         )
+    }
+
+    fun shouldAutoShift(cursorCapsMode: Int, inputType: Int): Boolean {
+        val inputClass = inputType and TYPE_MASK_CLASS
+        if (inputClass != TYPE_CLASS_TEXT) return false
+        val capFlags = inputType and TYPE_TEXT_FLAG_CAP_MASK
+        return capFlags != 0 && (cursorCapsMode and capFlags) != 0
     }
 }

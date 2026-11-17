@@ -57,6 +57,8 @@ class OpenKeyImeService : InputMethodService() {
     var currentPackageName: String = ""
         private set
 
+    private var currentInputType: Int = InputContextEvaluator.TYPE_CLASS_TEXT
+
     override fun onCreate() {
         super.onCreate()
         lifecycleOwner.onCreate()
@@ -83,7 +85,20 @@ class OpenKeyImeService : InputMethodService() {
             autoWordingEngine = autoWordingEngine
         )
 
-        val bridge = SystemSpellCheckerBridge(this)
+        val bridge = SystemSpellCheckerBridge(this) { word, _ ->
+            if (::sessionController.isInitialized &&
+                sessionController.editorUiState.language == 0 &&
+                !sessionController.editorUiState.suppressSuggestions &&
+                sessionController.composingWord.equals(word, ignoreCase = true)
+            ) {
+                autoWordingEngine.didProcessEnglishKeyEvent(
+                    charCode = 0,
+                    isBackspace = false,
+                    composingWord = sessionController.composingWord,
+                    previousWord = sessionController.previousWord
+                )
+            }
+        }
         spellCheckerBridge = bridge
         autoWordingEngine.spellCheckerBridge = bridge
 
@@ -95,16 +110,26 @@ class OpenKeyImeService : InputMethodService() {
     }
 
     internal fun syncSettingsToEngine(changedKey: String? = null) {
-        val state = VietnameseEngineState.shared
-        if (changedKey == null || changedKey == OpenKeySettingsStore.KEY_LANGUAGE) {
-            state.vLanguage = settingsStore.language
+        val activeLang = if (changedKey == OpenKeySettingsStore.KEY_LANGUAGE) {
+            settingsStore.language
+        } else if (
+            ::sessionController.isInitialized &&
+            settingsStore.useSmartSwitchKey &&
+            sessionController.editorUiState.packageName.isNotEmpty()
+        ) {
+            sessionController.editorUiState.language
+        } else {
+            settingsStore.language
         }
-        state.vInputType = settingsStore.inputType
-        state.vUseModernOrthography = if (settingsStore.useModernOrthography) 1 else 0
-        state.vCheckSpelling = if (settingsStore.checkSpelling) 1 else 0
-        state.vRestoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0
-        state.vBilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
-        state.vUseSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0
+        VietnameseEngine.syncConfig(
+            language = if (changedKey == null || changedKey == OpenKeySettingsStore.KEY_LANGUAGE) activeLang else null,
+            inputType = settingsStore.inputType,
+            useModernOrthography = if (settingsStore.useModernOrthography) 1 else 0,
+            checkSpelling = if (settingsStore.checkSpelling) 1 else 0,
+            restoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0,
+            useSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0,
+            bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
+        )
 
         autoWordingEngine.syncConfig(
             isEnabled = settingsStore.autoWordingEnabled,
@@ -144,12 +169,10 @@ class OpenKeyImeService : InputMethodService() {
         }
     }
 
-    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
-        super.onStartInputView(info, restarting)
-        lifecycleOwner.onResume()
-
+    private fun applyEditorInfo(info: EditorInfo?) {
         if (info != null) {
             currentPackageName = info.packageName ?: ""
+            currentInputType = info.inputType
             val context = EditorContext(
                 inputType = info.inputType,
                 imeOptions = info.imeOptions,
@@ -161,11 +184,25 @@ class OpenKeyImeService : InputMethodService() {
                 initialSelEnd = info.initialSelEnd
             )
             currentEvaluation = InputContextEvaluator.evaluate(context)
+            val capsMode = currentInputConnection?.getCursorCapsMode(info.inputType) ?: 0
+            sessionController.syncCursorCapsMode(capsMode)
         } else {
+            currentInputType = InputContextEvaluator.TYPE_CLASS_TEXT
             VietnameseEngine.resetSession()
             autoWordingEngine.clearCandidates()
             batchCoordinator.resetExpectedCursor(0)
         }
+    }
+
+    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        super.onStartInput(attribute, restarting)
+        applyEditorInfo(attribute)
+    }
+
+    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
+        super.onStartInputView(info, restarting)
+        lifecycleOwner.onResume()
+        applyEditorInfo(info)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -176,6 +213,7 @@ class OpenKeyImeService : InputMethodService() {
     override fun onFinishInput() {
         VietnameseEngine.resetSession()
         autoWordingEngine.clearCandidates()
+        batchCoordinator.resetExpectedCursor(0)
         super.onFinishInput()
     }
 
@@ -191,6 +229,8 @@ class OpenKeyImeService : InputMethodService() {
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         sessionController.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd)
+        val capsMode = currentInputConnection?.getCursorCapsMode(currentInputType) ?: 0
+        sessionController.syncCursorCapsMode(capsMode)
     }
 
     override fun onDestroy() {

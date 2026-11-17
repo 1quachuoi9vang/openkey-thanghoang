@@ -28,7 +28,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Divider
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -123,6 +122,7 @@ fun SettingsScreen(
     var grammarRepairEnabled by remember { mutableStateOf(settingsStore.grammarRepairEnabled) }
     var shorthandExpansionEnabled by remember { mutableStateOf(settingsStore.shorthandExpansionEnabled) }
     var candidateSuggestionsEnabled by remember { mutableStateOf(settingsStore.candidateSuggestionsEnabled) }
+    var doubleSpacePeriodEnabled by remember { mutableStateOf(settingsStore.doubleSpacePeriodEnabled) }
     var customShorthands by remember { mutableStateOf(settingsStore.getCustomShorthands()) }
 
     DisposableEffect(settingsStore) {
@@ -165,6 +165,7 @@ fun SettingsScreen(
                 OpenKeySettingsStore.KEY_GRAMMAR_REPAIR_ENABLED -> grammarRepairEnabled = settingsStore.grammarRepairEnabled
                 OpenKeySettingsStore.KEY_SHORTHAND_EXPANSION_ENABLED -> shorthandExpansionEnabled = settingsStore.shorthandExpansionEnabled
                 OpenKeySettingsStore.KEY_CANDIDATE_SUGGESTIONS_ENABLED -> candidateSuggestionsEnabled = settingsStore.candidateSuggestionsEnabled
+                OpenKeySettingsStore.KEY_DOUBLE_SPACE_PERIOD_ENABLED -> doubleSpacePeriodEnabled = settingsStore.doubleSpacePeriodEnabled
                 OpenKeySettingsStore.KEY_CUSTOM_SHORTHANDS -> customShorthands = settingsStore.getCustomShorthands()
             }
             syncPreviewEngine(key)
@@ -738,6 +739,20 @@ fun SettingsScreen(
                     Switch(
                         checked = candidateSuggestionsEnabled,
                         onCheckedChange = { settingsStore.candidateSuggestionsEnabled = it },
+                        enabled = autoWordingEnabled
+                    )
+                }
+
+                // Double-Space Period
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = autoWordingStrings["doubleSpacePeriodTitle"] ?: "Double-Space Period (. )", fontSize = 13.sp)
+                    Switch(
+                        checked = doubleSpacePeriodEnabled,
+                        onCheckedChange = { settingsStore.doubleSpacePeriodEnabled = it },
                         enabled = autoWordingEnabled
                     )
                 }

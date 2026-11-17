@@ -259,7 +259,6 @@ priority	seed
 priority	seeds
 priority	seek
 priority	seeks
-priority	seems
 priority	seemed
 priority	need
 priority	needs
@@ -350,7 +349,6 @@ priority	wool
 priority	stool
 priority	spool
 priority	school
-priority	rooms
 priority	zoom
 priority	bloom
 priority	broom
@@ -627,7 +625,6 @@ lookback	so
 lookback	up
 lookback	by
 lookback	my
-lookback	we
 lookback	he
 lookback	me
 lookback	be
@@ -672,7 +669,6 @@ extra	from
 extra	they
 extra	will
 extra	would
-extra	there
 extra	their
 extra	what
 extra	about
@@ -706,7 +702,6 @@ extra	way
 extra	even
 extra	want
 extra	because
-extra	these
 extra	give
 extra	day
 extra	find
@@ -2184,21 +2179,14 @@ extra	protocol
 extra	extension
 extra	import
 extra	export
-extra	public
 extra	static
 extra	const
 extra	async
 extra	await
-extra	return
-extra	break
 extra	switch
 extra	default
-extra	throw
 extra	throws
-extra	catch
-extra	guard
 extra	defer
-extra	repeat
 extra	print
 extra	debug
 extra	warning
@@ -2207,24 +2195,18 @@ extra	trace
 extra	fatal
 extra	panic
 extra	assert
-extra	expect
 extra	verify
-extra	build
-extra	clean
 extra	deploy
-extra	commit
 extra	merge
 extra	rebase
 extra	cherry
 extra	stash
 extra	fetch
-extra	push
 extra	clone
 extra	revert
 extra	checkout
 extra	remote
 extra	origin
-extra	develop
 extra	staging
 extra	server
 extra	request
@@ -2240,7 +2222,6 @@ extra	controller
 extra	repository
 extra	schema
 extra	column
-extra	foreign
 extra	cache
 extra	redis
 extra	postgres
@@ -2253,7 +2234,6 @@ extra	rabbit
 extra	queue
 extra	stream
 extra	listener
-extra	worker
 extra	cron
 extra	schedule
 extra	timer
@@ -2274,7 +2254,6 @@ extra	saml
 extra	oidc
 extra	admin
 extra	viewer
-extra	role
 extra	permission
 extra	scope
 extra	revoke
@@ -2333,8 +2312,6 @@ extra	margin
 extra	padding
 extra	width
 extra	height
-extra	left
-extra	center
 extra	scroll
 extra	hidden
 extra	visible
@@ -2350,7 +2327,6 @@ extra	loading
 extra	pending
 extra	secondary
 extra	tertiary
-extra	system
 extra	custom
 extra	terrible
 extra	horrible
@@ -2379,7 +2355,6 @@ extra	grew
 extra	won
 extra	bought
 extra	fell
-extra	cut
 extra	sold
 extra	ate
 extra	drew
@@ -2388,10 +2363,7 @@ extra	fought
 extra	threw
 extra	hid
 extra	done
-extra	seen
 extra	gone
-extra	run
-extra	become
 extra	meant
 extra	lost
 extra	sent
@@ -2588,3 +2560,5 @@ ranked	update
 ranked	android
 ranked	samsung
 ranked	keyboard
+lookback	seems
+lookback	rooms

@@ -51,13 +51,12 @@ class ImePipelineAndContextTest {
     }
 
     @Test
-    fun `test URI, Email, Filter and NO_SUGGESTIONS trigger bypass without isSecureField`() {
+    fun `test URI, Email and Filter trigger bypass without isSecureField`() {
         val nonSecureBypasses = listOf(
             InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_URI,
             InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
-            InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_FILTER,
-            InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_FILTER
         )
 
         for (inputType in nonSecureBypasses) {
@@ -140,7 +139,7 @@ class ImePipelineAndContextTest {
     // 2. Batch Direct Replacement & Cursor Tracking Tests (REQ-005, ADR-005)
     // -------------------------------------------------------------------------
 
-    class MockTextCommitterTarget : TextCommitterTarget {
+    open class MockTextCommitterTarget : TextCommitterTarget {
         val callLog = mutableListOf<String>()
         var textBuffer = StringBuilder()
         var cursorPosition = 0
@@ -452,6 +451,211 @@ class ImePipelineAndContextTest {
         controller.onKeyAction(KeyAction.CommitChar("g")) // 5
         controller.onKeyAction(KeyAction.CommitChar("s")) // 5 ("tiếng")
         assertEquals("tiếng", target.textBuffer.toString())
+    }
+
+    // -------------------------------------------------------------------------
+    // Stage 2B: AND-02 Selection Tracking & Collapsed Cursor Retention
+    // -------------------------------------------------------------------------
+    @Test
+    fun testStage2BAnd02UnknownInitialSelectionAndCollapsedCursorRetention() {
+        val target = MockTextCommitterTarget()
+        val coordinator = BatchReplacementCoordinator()
+        val controller = KeyboardSessionController(committer = target, batchCoordinator = coordinator)
+
+        // initialSelStart = -1 leaves isCursorAnchorKnown = false and hasKnownSelection = false
+        controller.onStartInput(EditorContext(packageName = "com.test.app"), initialSelStart = -1, initialSelEnd = -1)
+        assertFalse(coordinator.isCursorAnchorKnown, "initialSelStart = -1 must leave isCursorAnchorKnown = false")
+        assertFalse(coordinator.hasKnownSelection, "initialSelStart = -1 must leave hasKnownSelection = false")
+
+        // Typing before first onUpdateSelection must NOT be wiped out when initial onUpdateSelection arrives
+        controller.onKeyAction(KeyAction.CommitChar("t"))
+        assertEquals("t", controller.composingWord)
+        val spuriousReset = controller.onUpdateSelection(-1, -1, 10, 10)
+        assertFalse(spuriousReset, "First onUpdateSelection after unknown initialSelStart must not spuriously reset session")
+        assertEquals("t", controller.composingWord, "Composing word must stay intact after initial selection sync")
+        assertTrue(coordinator.isCursorAnchorKnown, "Collapsed onUpdateSelection must set isCursorAnchorKnown = true")
+        assertEquals(10, coordinator.expectedCursorPosition)
+
+        // Collapsed cursor keeps isCursorAnchorKnown = true after commitBatch and collapsed onUpdateSelection
+        coordinator.commitBatch(target, backspaceCount = 0, replacement = "i")
+        assertTrue(coordinator.isCursorAnchorKnown, "commitBatch must preserve isCursorAnchorKnown = true for collapsed cursor")
+        assertEquals(11, coordinator.expectedCursorPosition)
+
+        val selfUpdateReset = controller.onUpdateSelection(10, 10, 11, 11)
+        assertFalse(selfUpdateReset)
+        assertTrue(coordinator.isCursorAnchorKnown, "Collapsed onUpdateSelection must keep isCursorAnchorKnown = true")
+
+        // Negative newSelStart after isCursorAnchorKnown == true resets isCursorAnchorKnown = false without resetting session (K11)
+        val negativeUpdateReset = controller.onUpdateSelection(11, 11, -1, -1)
+        assertFalse(negativeUpdateReset)
+        assertFalse(coordinator.isCursorAnchorKnown, "onUpdateSelection(-1, -1) must reset isCursorAnchorKnown = false")
+        assertFalse(coordinator.hasKnownSelection, "onUpdateSelection(-1, -1) must reset hasKnownSelection = false")
+    }
+
+    // -------------------------------------------------------------------------
+    // Stage 2B: AND-05 Batch Atomicity, Selection Delete & Surrogate Backspace
+    // -------------------------------------------------------------------------
+    @Test
+    fun testStage2BAnd05BatchAtomicitySelectionDeleteAndSurrogateBackspace() {
+        val coordinator = BatchReplacementCoordinator()
+        coordinator.resetExpectedCursor(5, knownSelection = true)
+
+        // commitBatch does NOT short-circuit commitText when deleteSurroundingText returns false
+        val failingDeleteTarget = object : MockTextCommitterTarget() {
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                callLog.add("deleteSurroundingText($beforeLength, $afterLength)")
+                return false
+            }
+        }
+        val res = coordinator.commitBatch(failingDeleteTarget, backspaceCount = 1, replacement = "á")
+        assertFalse(res)
+        assertTrue(failingDeleteTarget.callLog.contains("commitText(\"á\", 1)"), "commitText must not be short-circuited when deleteSurroundingText returns false")
+        assertEquals(0, failingDeleteTarget.batchEditDepth, "endBatchEdit must always be called")
+
+        // endBatchEdit is called in try/finally even if commitText throws
+        val throwingTarget = object : MockTextCommitterTarget() {
+            override fun commitText(text: CharSequence, newCursorPosition: Int): Boolean {
+                throw IllegalStateException("boom")
+            }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            coordinator.commitBatch(throwingTarget, backspaceCount = 0, replacement = "x")
+        }
+        assertEquals(0, throwingTarget.batchEditDepth, "endBatchEdit must be called in finally when commitText throws")
+
+        // Backspace deletes active selection first and handles surrogate pairs
+        var selectionDeletedCount = 0
+        var surrogateSingleBackwardCalls = 0
+        val selectionAndEmojiTarget = object : MockTextCommitterTarget() {
+            var hasActiveSelection = true
+            override fun deleteSelectionIfAny(): Boolean {
+                if (hasActiveSelection) {
+                    hasActiveSelection = false
+                    selectionDeletedCount++
+                    return true
+                }
+                return false
+            }
+
+            override fun deleteSingleBackward(): Int {
+                surrogateSingleBackwardCalls++
+                // Simulate deleting a 2-char UTF-16 surrogate pair emoji
+                return 2
+            }
+        }
+        val selCoord = BatchReplacementCoordinator()
+        val controller = KeyboardSessionController(committer = selectionAndEmojiTarget, batchCoordinator = selCoord)
+        controller.onStartInput(EditorContext(packageName = "com.test.app"), initialSelStart = 2, initialSelEnd = 5)
+        controller.onUpdateSelection(0, 0, 2, 5)
+        controller.onKeyAction(KeyAction.Backspace)
+        assertEquals(1, selectionDeletedCount, "Backspace must delete active selection first")
+        assertEquals(0, surrogateSingleBackwardCalls, "Backspace must not delete surrounding char when selection was deleted")
+
+        // Next backspace deletes full 2-code-unit surrogate pair and shifts expectedCursorPosition by -2
+        val posBeforeEmojiDel = selCoord.expectedCursorPosition
+        controller.onKeyAction(KeyAction.Backspace)
+        assertEquals(1, surrogateSingleBackwardCalls)
+        assertEquals((posBeforeEmojiDel - 2).coerceAtLeast(0), selCoord.expectedCursorPosition)
+    }
+
+    // -------------------------------------------------------------------------
+    // Stage 2B: AND-06 & AND-07 NO_SUGGESTIONS, Single-Line Enter, Enter WordBreak, SmartSwitch vLanguage
+    // -------------------------------------------------------------------------
+    @Test
+    fun testStage2BAnd06And07NoSuggestionsSingleLineEnterAndSmartSwitchEngineSync() {
+        // AND-06a: TYPE_TEXT_FLAG_NO_SUGGESTIONS keeps bypassVietnamese = false and sets suppressSuggestions = true
+        val noSugCtx = EditorContext(
+            inputType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_NO_SUGGESTIONS,
+            imeOptions = InputContextEvaluator.IME_ACTION_DONE,
+            packageName = "com.test.app"
+        )
+        val noSugEval = InputContextEvaluator.evaluate(noSugCtx)
+        assertFalse(noSugEval.bypassVietnamese, "NO_SUGGESTIONS must keep bypassVietnamese = false")
+        assertTrue(noSugEval.suppressSuggestions, "NO_SUGGESTIONS must set suppressSuggestions = true")
+
+        // AND-06b: Single-line IME_ACTION_NONE and IME_ACTION_UNSPECIFIED set shouldSendNewlineOnEnter = true
+        for (act in listOf(InputContextEvaluator.IME_ACTION_NONE, InputContextEvaluator.IME_ACTION_UNSPECIFIED)) {
+            val singleLineEval = InputContextEvaluator.evaluate(
+                EditorContext(InputContextEvaluator.TYPE_CLASS_TEXT, act, "com.test.app")
+            )
+            assertTrue(singleLineEval.shouldSendNewlineOnEnter, "Single-line action $act must enable newline/KEYCODE_ENTER fallback")
+        }
+
+        // AND-06c: KeyAction.Enter triggers evaluateWordBreakRestore before reset
+        val target = MockTextCommitterTarget()
+        val controller = KeyboardSessionController(committer = target)
+        controller.onStartInput(
+            EditorContext(InputContextEvaluator.TYPE_CLASS_TEXT, InputContextEvaluator.IME_ACTION_UNSPECIFIED, "com.zing.zalo"),
+            initialSelStart = 0,
+            initialSelEnd = 0
+        )
+        for (ch in "daats") {
+            controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        controller.onKeyAction(KeyAction.Enter)
+        assertEquals("đất\n", target.textBuffer.toString(), "Enter must run evaluateWordBreakRestore ('daats' -> 'đất') before newline")
+
+        // AND-07: SmartSwitch updates editorUiState.language AND synced VietnameseEngineState.shared.vLanguage without mutating settingsStore.language
+        val settingsStorage = InMemoryKeyValueStorage()
+        val settingsStore = OpenKeySettingsStore(settingsStorage)
+        settingsStore.language = 1
+        settingsStore.useSmartSwitchKey = true
+        val smartSwitchStore = SmartSwitchStore(InMemoryKeyValueStorage())
+        smartSwitchStore.setAppLanguage("com.slack", 0)
+
+        val smartController = KeyboardSessionController(
+            settingsStore = settingsStore,
+            smartSwitchStore = smartSwitchStore,
+            committer = target
+        )
+        smartController.onStartInput(EditorContext(packageName = "com.slack"))
+        assertEquals(0, smartController.editorUiState.language)
+        assertEquals(0, VietnameseEngineState.shared.vLanguage, "SmartSwitch must sync VietnameseEngineState.shared.vLanguage to per-app language")
+        assertEquals(1, settingsStore.language, "SmartSwitch must NOT mutate global settingsStore.language")
+    }
+
+    // -------------------------------------------------------------------------
+    // Stage 2B: AND-04 Auto-Shift Helper & Smart Punctuation Spacing
+    // -------------------------------------------------------------------------
+    @Test
+    fun testStage2BAnd04AutoShiftAndSmartPunctuationSpacing() {
+        // getCursorCapsMode auto-Shift helper
+        val sentenceCapType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_SENTENCES
+        assertTrue(InputContextEvaluator.shouldAutoShift(InputContextEvaluator.TYPE_TEXT_FLAG_CAP_SENTENCES, sentenceCapType))
+        assertFalse(InputContextEvaluator.shouldAutoShift(0, sentenceCapType))
+        assertFalse(InputContextEvaluator.shouldAutoShift(InputContextEvaluator.TYPE_TEXT_FLAG_CAP_SENTENCES, InputContextEvaluator.TYPE_CLASS_TEXT))
+
+        // Smart punctuation spacing on candidate tap before , . ! ? ; :
+        AutoWordingEngine.shared.syncConfig(
+            isEnabled = true,
+            grammarRepair = true,
+            shorthandExpansion = true,
+            candidateSuggestions = true,
+            doubleSpacePeriod = false
+        )
+        try {
+            val target = MockTextCommitterTarget()
+            val controller = KeyboardSessionController(committer = target)
+            controller.onStartInput(EditorContext(packageName = "com.zing.zalo"), initialSelStart = 0, initialSelEnd = 0)
+            for (ch in "tieng") {
+                controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+            }
+            val cands = AutoWordingEngine.shared.activeCandidates
+            val tiengCand = cands.firstOrNull { it.text == "tiếng" } ?: WordCandidate(0, "tiếng", CandidateKind.STEM_COMPLETION, 5)
+            controller.onCandidateSelected(tiengCand)
+            assertEquals("tiếng ", target.textBuffer.toString())
+
+            controller.onKeyAction(KeyAction.CommitChar(","))
+            assertEquals("tiếng,", target.textBuffer.toString(), "Typing ',' right after candidate tap must trim auto-inserted trailing space")
+        } finally {
+            AutoWordingEngine.shared.syncConfig(
+                isEnabled = false,
+                grammarRepair = false,
+                shorthandExpansion = false,
+                candidateSuggestions = false,
+                doubleSpacePeriod = false
+            )
+        }
     }
 }
 

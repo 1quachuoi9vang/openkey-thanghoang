@@ -9,6 +9,9 @@ interface TextCommitterTarget {
     fun performEditorAction(actionId: Int): Boolean
     fun moveCursorBy(deltaChars: Int): Boolean
     fun deletePreviousWord(): Boolean
+    fun deleteSelectionIfAny(): Boolean = false
+    fun deleteSingleBackward(): Int = if (deleteSurroundingText(1, 0)) 1 else 0
+    fun sendEnterKey(): Boolean = false
 }
 
 class BatchReplacementCoordinator {
@@ -20,6 +23,9 @@ class BatchReplacementCoordinator {
         private set
     var isCursorAnchorKnown: Boolean = true
         private set
+
+    val hasActiveSelection: Boolean
+        get() = (isCursorAnchorKnown || hasKnownSelection) && expectedCursorPosition >= 0 && currentSelEnd != expectedCursorPosition
 
     private val pendingExpectedCursors = ArrayDeque<Int>(32)
     private var unanchoredPendingOps: Int = 0
@@ -46,6 +52,32 @@ class BatchReplacementCoordinator {
             currentSelEnd = position
             hasKnownSelection = knownSelection
         }
+    }
+
+    fun resetExpectedSelection(selStart: Int, selEnd: Int) {
+        pendingExpectedCursors.clear()
+        unanchoredPendingOps = 0
+        if (selStart < 0) {
+            isCursorAnchorKnown = false
+            expectedCursorPosition = 0
+            currentSelEnd = 0
+            hasKnownSelection = false
+        } else {
+            isCursorAnchorKnown = true
+            expectedCursorPosition = selStart
+            currentSelEnd = selEnd
+            hasKnownSelection = true
+        }
+    }
+
+    fun onSelectionDeleted() {
+        val collapsed = minOf(expectedCursorPosition, currentSelEnd).coerceAtLeast(0)
+        pendingExpectedCursors.clear()
+        unanchoredPendingOps = 0
+        expectedCursorPosition = collapsed
+        currentSelEnd = collapsed
+        hasKnownSelection = false
+        enqueueExpectedCursor(collapsed)
     }
 
     fun recordSelfDelete(deletedCount: Int) {
@@ -78,35 +110,40 @@ class BatchReplacementCoordinator {
     ): Boolean {
         target.beginBatchEdit()
         var success = true
-        val prevCursor = expectedCursorPosition
-        if (backspaceCount > 0) {
-            success = success && target.deleteSurroundingText(backspaceCount, 0)
-            if (isCursorAnchorKnown) {
-                expectedCursorPosition = (expectedCursorPosition - backspaceCount).coerceAtLeast(0)
+        try {
+            val prevCursor = expectedCursorPosition
+            if (backspaceCount > 0) {
+                val deleted = target.deleteSurroundingText(backspaceCount, 0)
+                success = success && deleted
+                if (isCursorAnchorKnown) {
+                    expectedCursorPosition = (expectedCursorPosition - backspaceCount).coerceAtLeast(0)
+                }
             }
+            val postDeleteCursor = expectedCursorPosition
+            if (replacement.isNotEmpty()) {
+                val committed = target.commitText(replacement, 1)
+                success = success && committed
+                if (isCursorAnchorKnown) {
+                    expectedCursorPosition += replacement.length
+                }
+            }
+            currentSelEnd = expectedCursorPosition
+            hasKnownSelection = false
+            if (!isCursorAnchorKnown) {
+                if (backspaceCount > 0 || replacement.isNotEmpty()) {
+                    unanchoredPendingOps++
+                }
+            } else if (backspaceCount > 0 || replacement.isNotEmpty()) {
+                if (backspaceCount > 0 && replacement.isNotEmpty() &&
+                    postDeleteCursor != prevCursor && postDeleteCursor != expectedCursorPosition
+                ) {
+                    enqueueExpectedCursor(postDeleteCursor)
+                }
+                enqueueExpectedCursor(expectedCursorPosition)
+            }
+        } finally {
+            target.endBatchEdit()
         }
-        val postDeleteCursor = expectedCursorPosition
-        if (replacement.isNotEmpty()) {
-            success = success && target.commitText(replacement, 1)
-            if (isCursorAnchorKnown) {
-                expectedCursorPosition += replacement.length
-            }
-        }
-        currentSelEnd = expectedCursorPosition
-        hasKnownSelection = false
-        if (!isCursorAnchorKnown) {
-            if (backspaceCount > 0 || replacement.isNotEmpty()) {
-                unanchoredPendingOps++
-            }
-        } else if (backspaceCount > 0 || replacement.isNotEmpty()) {
-            if (backspaceCount > 0 && replacement.isNotEmpty() &&
-                postDeleteCursor != prevCursor && postDeleteCursor != expectedCursorPosition
-            ) {
-                enqueueExpectedCursor(postDeleteCursor)
-            }
-            enqueueExpectedCursor(expectedCursorPosition)
-        }
-        target.endBatchEdit()
         return success
     }
 
@@ -145,8 +182,14 @@ class BatchReplacementCoordinator {
         hasKnownSelection = false
         currentSelEnd = newSelEnd
 
+        if (newSelStart < 0) {
+            pendingExpectedCursors.clear()
+            unanchoredPendingOps = 0
+            isCursorAnchorKnown = false
+            return false
+        }
+
         if (!isCursorAnchorKnown) {
-            if (newSelStart < 0) return false
             isCursorAnchorKnown = true
             expectedCursorPosition = newSelStart
             if (unanchoredPendingOps > 0) {

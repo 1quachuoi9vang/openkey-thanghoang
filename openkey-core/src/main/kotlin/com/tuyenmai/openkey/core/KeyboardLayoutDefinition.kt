@@ -16,7 +16,18 @@ data class KeyModel(
     val weight: Float = 0.10f,
     val isFunctional: Boolean = false,
     val action: KeyAction = KeyAction.CommitChar(primaryLabel)
-)
+) {
+    val stableTouchIdentity: String
+        get() = when (val act = action) {
+            is KeyAction.CommitChar -> "char:${act.char.lowercase()}:${secondaryLabel ?: ""}"
+            is KeyAction.Shift -> "shift"
+            is KeyAction.Backspace -> "backspace"
+            is KeyAction.Space -> "space"
+            is KeyAction.Enter -> "enter"
+            is KeyAction.SwitchLanguage -> "switch_lang"
+            is KeyAction.SwitchLayer -> "switch_layer:$primaryLabel"
+        }
+}
 
 data class KeyRow(
     val keys: List<KeyModel>,

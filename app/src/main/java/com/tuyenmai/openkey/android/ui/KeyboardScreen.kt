@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -139,6 +140,13 @@ fun KeyboardScreen(
     var currentLayer by remember { mutableStateOf(KeyboardLayer.QWERTY) }
     var isShifted by remember { mutableStateOf(false) }
     var isCapsLock by remember { mutableStateOf(false) }
+    var lastShiftTapMs by remember { mutableStateOf(0L) }
+
+    LaunchedEffect(editorUiState.isAutoShifted) {
+        if (!isCapsLock) {
+            isShifted = editorUiState.isAutoShifted
+        }
+    }
 
     val layoutConfig = PhoneLayoutConfig(
         screenWidthDp = screenWidthDp,
@@ -175,14 +183,15 @@ fun KeyboardScreen(
                 controller.onKeyAction(action)
             }
             is KeyAction.Shift -> {
-                if (!isShifted && !isCapsLock) {
-                    isShifted = true
-                } else if (isShifted && !isCapsLock) {
-                    isCapsLock = true
-                } else {
-                    isShifted = false
-                    isCapsLock = false
-                }
+                val shiftResult = gestureController.onShiftTap(
+                    isShifted = isShifted,
+                    isCapsLocked = isCapsLock,
+                    nowMs = android.os.SystemClock.uptimeMillis(),
+                    lastShiftTapMs = lastShiftTapMs
+                )
+                isShifted = shiftResult.isShifted
+                isCapsLock = shiftResult.isCapsLocked
+                lastShiftTapMs = shiftResult.lastShiftTapMs
             }
             is KeyAction.SwitchLayer -> {
                 currentLayer = when (currentLayer) {
@@ -277,7 +286,7 @@ fun KeyboardScreen(
                         ) {
                             rowDef.keys.forEach { keyModel ->
                                 KeyButton(
-                                    key = keyModel,
+                                    keyItem = keyModel,
                                     metrics = numpadMetrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -301,7 +310,7 @@ fun KeyboardScreen(
                         ) {
                             rows[0].keys.forEach { keyModel ->
                                 KeyButton(
-                                    key = keyModel,
+                                    keyItem = keyModel,
                                     metrics = metrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -325,7 +334,7 @@ fun KeyboardScreen(
                         ) {
                             rows[1].keys.forEach { keyModel ->
                                 KeyButton(
-                                    key = keyModel,
+                                    keyItem = keyModel,
                                     metrics = metrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -353,7 +362,7 @@ fun KeyboardScreen(
                             }
                             row3Def.keys.forEach { keyModel ->
                                 KeyButton(
-                                    key = keyModel,
+                                    keyItem = keyModel,
                                     metrics = metrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -386,7 +395,7 @@ fun KeyboardScreen(
                                     keyModel
                                 }
                                 KeyButton(
-                                    key = displayKey,
+                                    keyItem = displayKey,
                                     metrics = metrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
@@ -412,7 +421,7 @@ fun KeyboardScreen(
                         ) {
                             rows[4].keys.forEach { keyModel ->
                                 KeyButton(
-                                    key = keyModel,
+                                    keyItem = keyModel,
                                     metrics = metrics,
                                     palette = palette,
                                     hapticFeedbackEnabled = hapticFeedbackEnabled,
