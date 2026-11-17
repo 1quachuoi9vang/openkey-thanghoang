@@ -13,16 +13,13 @@ import com.tuyenmai.openkey.android.settings.SettingsActivity
 import com.tuyenmai.openkey.android.ui.KeyboardScreen
 import com.tuyenmai.openkey.core.AutoWordingEngine
 import com.tuyenmai.openkey.core.BatchReplacementCoordinator
-import com.tuyenmai.openkey.core.BilingualAutoSwitchEngine
 import com.tuyenmai.openkey.core.EditorContext
-import com.tuyenmai.openkey.core.HookCodeState
 import com.tuyenmai.openkey.core.InputContextEvaluator
 import com.tuyenmai.openkey.core.InputEvaluation
 import com.tuyenmai.openkey.core.KeyboardSessionController
 import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.SmartSwitchStore
 import com.tuyenmai.openkey.core.VietnameseEngine
-import com.tuyenmai.openkey.core.VietnameseEngineState
 
 /**
  * OpenKey Android Input Method Service (REQ-001, REQ-005, REQ-006, REQ-009, ADR-005..ADR-010).
@@ -71,8 +68,8 @@ class OpenKeyImeService : InputMethodService() {
         batchCoordinator = BatchReplacementCoordinator()
         committer = InputConnectionCommitter(
             inputConnectionProvider = { currentInputConnection },
-            keyEventSender = { sendDownUpKeyEvents(it.keyCode) },
-            batchCoordinator = batchCoordinator
+            batchCoordinator = batchCoordinator,
+            keyCodeSender = { sendDownUpKeyEvents(it) }
         )
         autoWordingEngine = AutoWordingEngine.shared
         autoWordingEngine.asyncCandidateExecutionEnabled = true

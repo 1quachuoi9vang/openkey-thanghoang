@@ -56,6 +56,7 @@ class OpenKeyAndroidAppTest {
         var extractedText: ExtractedText? = null
         var getExtractedTextCallCount = 0
         val sentKeyEvents = mutableListOf<KeyEvent>()
+        var returnSendKeyEvent: Boolean = true
 
         override fun beginBatchEdit(): Boolean {
             batchEditDepth++
@@ -100,7 +101,7 @@ class OpenKeyAndroidAppTest {
 
         override fun sendKeyEvent(event: KeyEvent?): Boolean {
             if (event != null) sentKeyEvents.add(event)
-            return true
+            return returnSendKeyEvent
         }
 
         override fun performEditorAction(editorAction: Int): Boolean = true
@@ -685,10 +686,37 @@ class OpenKeyAndroidAppTest {
         assertTrue(committer.deletePreviousWord())
         assertEquals("deletePreviousWord must update expectedCursorPosition", 6, coordinator.expectedCursorPosition)
 
-        // sendEnterKey sends KEYCODE_ENTER
+        // sendEnterKey fallback via InputConnection.sendKeyEvent (safe under isReturnDefaultValues = true)
         mockIc.sentKeyEvents.clear()
-        assertTrue(committer.sendEnterKey())
-        assertTrue(mockIc.sentKeyEvents.any { it.keyCode == KeyEvent.KEYCODE_ENTER })
+        mockIc.returnSendKeyEvent = true
+        assertTrue("Fallback sendEnterKey must return true when sendKeyEvent succeeds", committer.sendEnterKey())
+        assertEquals("Fallback sendEnterKey must dispatch DOWN and UP KeyEvents", 2, mockIc.sentKeyEvents.size)
+
+        // sendEnterKey falls back to commitText("\n", 1) when sendKeyEvent returns false
+        mockIc.sentKeyEvents.clear()
+        mockIc.committedText = ""
+        mockIc.returnSendKeyEvent = false
+        assertTrue("sendEnterKey must fall back to commitText newline when sendKeyEvent returns false", committer.sendEnterKey())
+        assertTrue("commitText newline fallback must append newline", mockIc.committedText.endsWith("\n"))
+        mockIc.returnSendKeyEvent = true
+
+        // Direct single-fire keyCodeSender dispatch for Enter and DPAD cursor steps
+        val sentCodes = mutableListOf<Int>()
+        val keyCodeCommitter = InputConnectionCommitter(
+            inputConnectionProvider = { mockIc },
+            batchCoordinator = null,
+            keyCodeSender = { sentCodes.add(it) }
+        )
+        assertTrue("keyCodeSender sendEnterKey must succeed", keyCodeCommitter.sendEnterKey())
+        assertEquals("keyCodeSender must dispatch KEYCODE_ENTER exactly once", listOf(KeyEvent.KEYCODE_ENTER), sentCodes)
+
+        sentCodes.clear()
+        assertTrue("keyCodeSender moveCursorBy(-2) must succeed", keyCodeCommitter.moveCursorBy(-2))
+        assertEquals(
+            "keyCodeSender must dispatch KEYCODE_DPAD_LEFT once per step",
+            listOf(KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_LEFT),
+            sentCodes
+        )
 
         // Verify KeyButton, KeyboardScreen, OpenKeyImeService, SettingsActivity Stage 2B wiring
         val keyButtonFile = listOf(
@@ -725,5 +753,6 @@ class OpenKeyAndroidAppTest {
         assertTrue(imeText.contains("override fun onFinishInput("))
         assertTrue(imeText.contains("getCursorCapsMode"))
         assertTrue(imeText.contains("VietnameseEngine.syncConfig("))
+        assertTrue("OpenKeyImeService must wire single-fire keyCodeSender", imeText.contains("keyCodeSender = { sendDownUpKeyEvents(it) }"))
     }
 }

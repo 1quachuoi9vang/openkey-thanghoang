@@ -18,7 +18,8 @@ import kotlin.math.abs
 class InputConnectionCommitter(
     private val inputConnectionProvider: () -> InputConnection?,
     private val keyEventSender: ((KeyEvent) -> Unit)? = null,
-    private val batchCoordinator: BatchReplacementCoordinator? = null
+    private val batchCoordinator: BatchReplacementCoordinator? = null,
+    private val keyCodeSender: ((Int) -> Unit)? = null
 ) : TextCommitterTarget {
 
     constructor(inputConnection: InputConnection?) : this({ inputConnection }, null, null)
@@ -77,16 +78,25 @@ class InputConnectionCommitter(
         var success = true
         ic.beginBatchEdit()
         for (i in 0 until steps) {
-            if (keyEventSender != null) {
-                keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_DOWN, dpadKey))
-                keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_UP, dpadKey))
-            } else {
-                success = success && ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, dpadKey))
-                success = success && ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, dpadKey))
-            }
+            success = success && dispatchHardwareKeyCode(dpadKey, ic)
         }
         ic.endBatchEdit()
         return success
+    }
+
+    private fun dispatchHardwareKeyCode(keyCode: Int, ic: InputConnection): Boolean {
+        if (keyCodeSender != null) {
+            keyCodeSender.invoke(keyCode)
+            return true
+        }
+        if (keyEventSender != null) {
+            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+            return true
+        }
+        val downSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        val upSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        return downSent && upSent
     }
 
     override fun deletePreviousWord(): Boolean {
@@ -153,14 +163,10 @@ class InputConnectionCommitter(
 
     override fun sendEnterKey(): Boolean {
         val ic = inputConnectionProvider() ?: return false
-        return if (keyEventSender != null) {
-            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-            keyEventSender.invoke(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        return if (dispatchHardwareKeyCode(KeyEvent.KEYCODE_ENTER, ic)) {
             true
         } else {
-            val downSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-            val upSent = ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-            if (downSent && upSent) true else ic.commitText("\n", 1)
+            ic.commitText("\n", 1)
         }
     }
 }
