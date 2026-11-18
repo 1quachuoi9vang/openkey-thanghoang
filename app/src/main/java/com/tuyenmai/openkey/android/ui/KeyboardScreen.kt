@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -140,9 +141,9 @@ fun KeyboardScreen(
     var currentLayer by remember { mutableStateOf(KeyboardLayer.QWERTY) }
     var isShifted by remember { mutableStateOf(false) }
     var isCapsLock by remember { mutableStateOf(false) }
-    var lastShiftTapMs by remember { mutableStateOf(0L) }
+    var lastShiftTapMs by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(editorUiState.isAutoShifted) {
+    LaunchedEffect(editorUiState.isAutoShifted, editorUiState.capsSyncSeq) {
         if (!isCapsLock) {
             isShifted = editorUiState.isAutoShifted
         }
@@ -172,7 +173,7 @@ fun KeyboardScreen(
         when (action) {
             is KeyAction.CommitChar -> {
                 controller.onKeyAction(action)
-                if (isShifted && !isCapsLock) {
+                if (controller.shouldClearShiftAfterCommitChar(isShifted = isShifted, isCapsLocked = isCapsLock)) {
                     isShifted = false
                 }
             }

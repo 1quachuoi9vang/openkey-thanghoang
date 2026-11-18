@@ -15,7 +15,9 @@ data class EditorUiState(
     val language: Int = 1,
     val packageName: String = "",
     val suppressSuggestions: Boolean = false,
-    val isAutoShifted: Boolean = false
+    val isAutoShifted: Boolean = false,
+    val isAllCapsField: Boolean = false,
+    val capsSyncSeq: Long = 0L
 )
 
 /**
@@ -127,16 +129,27 @@ class KeyboardSessionController(
             language = appLang,
             packageName = context.packageName,
             suppressSuggestions = eval.suppressSuggestions,
-            isAutoShifted = false
+            isAutoShifted = false,
+            isAllCapsField = eval.isAllCapsField,
+            capsSyncSeq = editorUiState.capsSyncSeq + 1L
         )
         updateEditorUiState(newState)
     }
 
     fun syncCursorCapsMode(cursorCapsMode: Int) {
         val autoShift = InputContextEvaluator.shouldAutoShift(cursorCapsMode, lastInputType)
-        if (editorUiState.isAutoShifted != autoShift) {
-            updateEditorUiState(editorUiState.copy(isAutoShifted = autoShift))
+        if (editorUiState.isAutoShifted != autoShift || autoShift) {
+            updateEditorUiState(
+                editorUiState.copy(
+                    isAutoShifted = autoShift,
+                    capsSyncSeq = editorUiState.capsSyncSeq + 1L
+                )
+            )
         }
+    }
+
+    fun shouldClearShiftAfterCommitChar(isShifted: Boolean, isCapsLocked: Boolean): Boolean {
+        return isShifted && !isCapsLocked && !editorUiState.isAllCapsField
     }
 
     /**
@@ -300,7 +313,7 @@ class KeyboardSessionController(
                     _composingWord = ""
                     VietnameseEngine.resetSession()
                     autoWordingEngine.clearCandidates()
-                    batchCoordinator.onSelectionDeleted()
+                    if (batchCoordinator.hasActiveSelection) batchCoordinator.onSelectionDeleted()
                     return true
                 }
                 if (batchCoordinator.hasActiveSelection) {

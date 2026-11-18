@@ -657,5 +657,170 @@ class ImePipelineAndContextTest {
             )
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Stage 2B Follow-Up: CAP_CHARACTERS Persistence, true->true capsSyncSeq & Single-Owner onSelectionDeleted
+    // -------------------------------------------------------------------------
+    @Test
+    fun testCapCharactersPersistenceAndTrueToTrueCapsSyncSeq() {
+        // (a) InputContextEvaluator.evaluate isAllCapsField detection
+        val allCapsEval = InputContextEvaluator.evaluate(
+            EditorContext(
+                inputType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_CHARACTERS,
+                packageName = "com.test.app"
+            )
+        )
+        assertTrue(allCapsEval.isAllCapsField, "TYPE_CLASS_TEXT | TYPE_TEXT_FLAG_CAP_CHARACTERS must set isAllCapsField = true")
+
+        val nonAllCapsTypes = listOf(
+            InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_SENTENCES,
+            InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_WORDS,
+            InputContextEvaluator.TYPE_CLASS_NUMBER,
+            InputContextEvaluator.TYPE_CLASS_NUMBER or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        )
+        for (type in nonAllCapsTypes) {
+            val eval = InputContextEvaluator.evaluate(
+                EditorContext(inputType = type, packageName = "com.test.app")
+            )
+            assertFalse(eval.isAllCapsField, "inputType 0x${type.toString(16)} must set isAllCapsField = false")
+        }
+
+        // (b) KeyboardSessionController ALL-CAPS Shift persistence & capsSyncSeq transitions
+        val target = MockTextCommitterTarget()
+        val controller = KeyboardSessionController(committer = target)
+
+        controller.onStartInput(
+            EditorContext(
+                inputType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_CHARACTERS,
+                packageName = "com.test.app"
+            )
+        )
+        assertTrue(controller.editorUiState.isAllCapsField, "Focusing CAP_CHARACTERS field must set editorUiState.isAllCapsField = true")
+        assertFalse(
+            controller.shouldClearShiftAfterCommitChar(isShifted = true, isCapsLocked = false),
+            "CAP_CHARACTERS field must NOT clear Shift after CommitChar so 'ABCD' stays uppercase"
+        )
+
+        for (capFlag in listOf(InputContextEvaluator.TYPE_TEXT_FLAG_CAP_WORDS, InputContextEvaluator.TYPE_TEXT_FLAG_CAP_SENTENCES)) {
+            controller.onStartInput(
+                EditorContext(
+                    inputType = InputContextEvaluator.TYPE_CLASS_TEXT or capFlag,
+                    packageName = "com.test.app"
+                )
+            )
+            assertFalse(controller.editorUiState.isAllCapsField, "CAP_WORDS/CAP_SENTENCES must set editorUiState.isAllCapsField = false")
+            assertTrue(
+                controller.shouldClearShiftAfterCommitChar(isShifted = true, isCapsLocked = false),
+                "One-shot Shift in CAP_WORDS/CAP_SENTENCES must clear after CommitChar"
+            )
+            assertFalse(
+                controller.shouldClearShiftAfterCommitChar(isShifted = true, isCapsLocked = true),
+                "CapsLock must prevent clearing Shift after CommitChar"
+            )
+            assertFalse(
+                controller.shouldClearShiftAfterCommitChar(isShifted = false, isCapsLocked = false),
+                "Unshifted state must return false from shouldClearShiftAfterCommitChar"
+            )
+        }
+
+        // Focus CAP_WORDS field; onStartInput must monotonically increment capsSyncSeq (never reset to 0L)
+        val seqBeforeStart = controller.editorUiState.capsSyncSeq
+        controller.onStartInput(
+            EditorContext(
+                inputType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_FLAG_CAP_WORDS,
+                packageName = "com.test.app"
+            )
+        )
+        assertFalse(controller.editorUiState.isAutoShifted)
+        val seqAfterStart = controller.editorUiState.capsSyncSeq
+        assertEquals(
+            seqBeforeStart + 1L,
+            seqAfterStart,
+            "onStartInput must increment capsSyncSeq monotonically so field-to-field focus transitions never alias Compose LaunchedEffect keys"
+        )
+
+        val notifiedStates = mutableListOf<EditorUiState>()
+        val listener: (EditorUiState) -> Unit = { state -> notifiedStates.add(state) }
+        controller.addUiStateListener(listener)
+        notifiedStates.clear() // ignore initial addUiStateListener callback
+
+        // 1st syncCursorCapsMode(CAP_WORDS): false -> true
+        controller.syncCursorCapsMode(InputContextEvaluator.TYPE_TEXT_FLAG_CAP_WORDS)
+        assertTrue(controller.editorUiState.isAutoShifted)
+        val seq1 = controller.editorUiState.capsSyncSeq
+        assertEquals(seqAfterStart + 1L, seq1, "false -> true auto-shift transition must increment capsSyncSeq")
+        assertEquals(1, notifiedStates.size, "false -> true transition must notify uiStateListeners")
+
+        // 2nd syncCursorCapsMode(CAP_WORDS): true -> true (e.g. after typing 'A ' before intermediate false)
+        controller.syncCursorCapsMode(InputContextEvaluator.TYPE_TEXT_FLAG_CAP_WORDS)
+        assertTrue(controller.editorUiState.isAutoShifted)
+        val seq2 = controller.editorUiState.capsSyncSeq
+        assertEquals(seq1 + 1L, seq2, "true -> true auto-shift transition must increment capsSyncSeq")
+        assertEquals(2, notifiedStates.size, "true -> true transition must notify uiStateListeners so Compose re-applies Shift")
+
+        // 1st syncCursorCapsMode(0): true -> false
+        controller.syncCursorCapsMode(0)
+        assertFalse(controller.editorUiState.isAutoShifted)
+        val seq3 = controller.editorUiState.capsSyncSeq
+        assertEquals(seq2 + 1L, seq3, "true -> false auto-shift transition must increment capsSyncSeq")
+        assertEquals(3, notifiedStates.size)
+
+        // 2nd syncCursorCapsMode(0): false -> false (120Hz lowercase hot path — must NOT increment or allocate)
+        controller.syncCursorCapsMode(0)
+        assertFalse(controller.editorUiState.isAutoShifted)
+        assertEquals(seq3, controller.editorUiState.capsSyncSeq, "false -> false must NOT increment capsSyncSeq")
+        assertEquals(3, notifiedStates.size, "false -> false must NOT notify uiStateListeners")
+
+        // Switching to a second field (e.g. password/email field where syncCursorCapsMode(0) is false) must still advance capsSyncSeq
+        controller.onStartInput(
+            EditorContext(
+                inputType = InputContextEvaluator.TYPE_CLASS_TEXT or InputContextEvaluator.TYPE_TEXT_VARIATION_PASSWORD,
+                packageName = "com.test.app"
+            )
+        )
+        controller.syncCursorCapsMode(0)
+        assertFalse(controller.editorUiState.isAutoShifted)
+        assertEquals(
+            seq3 + 1L,
+            controller.editorUiState.capsSyncSeq,
+            "Switching focus to a password/lowercase field must advance capsSyncSeq once so stale one-shot Shift resets"
+        )
+        controller.removeUiStateListener(listener)
+
+        // (c) Single-owner onSelectionDeleted() in KeyboardSessionController (P2-2)
+        val selfSyncCoord = BatchReplacementCoordinator()
+        val selfSyncTarget = object : MockTextCommitterTarget() {
+            override fun deleteSelectionIfAny(): Boolean {
+                selfSyncCoord.onSelectionDeleted()
+                selfSyncCoord.onCursorMovedByTrackpad(1)
+                return true
+            }
+        }
+        val selfSyncController = KeyboardSessionController(committer = selfSyncTarget, batchCoordinator = selfSyncCoord)
+        selfSyncController.onStartInput(EditorContext(packageName = "com.test.app"), initialSelStart = 2, initialSelEnd = 5)
+        assertTrue(selfSyncCoord.hasActiveSelection)
+        selfSyncController.onKeyAction(KeyAction.Backspace)
+        assertFalse(selfSyncCoord.hasActiveSelection)
+        assertFalse(
+            selfSyncCoord.onUpdateSelection(2, 5, 2, 2),
+            "KeyboardSessionController must not invoke onSelectionDeleted() a second time when target already cleared active selection"
+        )
+
+        val customCoord = BatchReplacementCoordinator()
+        val customTarget = object : MockTextCommitterTarget() {
+            override fun deleteSelectionIfAny(): Boolean = true
+        }
+        val customController = KeyboardSessionController(committer = customTarget, batchCoordinator = customCoord)
+        customController.onStartInput(EditorContext(packageName = "com.test.app"), initialSelStart = 2, initialSelEnd = 5)
+        assertTrue(customCoord.hasActiveSelection)
+        customController.onKeyAction(KeyAction.Backspace)
+        assertFalse(
+            customCoord.hasActiveSelection,
+            "KeyboardSessionController must call batchCoordinator.onSelectionDeleted() when custom target leaves hasActiveSelection == true"
+        )
+        assertEquals(2, customCoord.expectedCursorPosition)
+        assertEquals(2, customCoord.currentSelEnd)
+        assertFalse(customCoord.onUpdateSelection(2, 5, 2, 2))
+    }
 }
 

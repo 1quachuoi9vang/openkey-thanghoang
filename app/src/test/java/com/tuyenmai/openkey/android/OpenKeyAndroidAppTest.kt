@@ -737,6 +737,9 @@ class OpenKeyAndroidAppTest {
         assertTrue(screenText.contains("addCandidatesListener"))
         assertTrue(screenText.contains("removeCandidatesListener"))
         assertFalse(screenText.contains("onCandidatesChanged = null"))
+        assertTrue("KeyboardScreen.kt must use primitive mutableLongStateOf(0L) for lastShiftTapMs", screenText.contains("mutableLongStateOf(0L)"))
+        assertTrue("KeyboardScreen.kt LaunchedEffect must key on editorUiState.capsSyncSeq", screenText.contains("editorUiState.capsSyncSeq"))
+        assertTrue("KeyboardScreen.kt must delegate post-commit Shift clear to shouldClearShiftAfterCommitChar", screenText.contains("shouldClearShiftAfterCommitChar"))
 
         val settingsFile = listOf(
             File("src/main/java/com/tuyenmai/openkey/android/settings/SettingsActivity.kt"),

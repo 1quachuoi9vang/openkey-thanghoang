@@ -13,7 +13,8 @@ data class InputEvaluation(
     val imeActionId: Int = InputContextEvaluator.IME_ACTION_UNSPECIFIED,
     val shouldSendNewlineOnEnter: Boolean = false,
     val isNumericField: Boolean = false,
-    val suppressSuggestions: Boolean = false
+    val suppressSuggestions: Boolean = false,
+    val isAllCapsField: Boolean = false
 )
 
 object InputContextEvaluator {
@@ -109,6 +110,7 @@ object InputContextEvaluator {
         }
 
         val isNumericField = (inputClass == TYPE_CLASS_NUMBER || inputClass == TYPE_CLASS_PHONE || inputClass == TYPE_CLASS_DATETIME)
+        val isAllCapsField = (inputClass == TYPE_CLASS_TEXT) && ((context.inputType and TYPE_TEXT_FLAG_CAP_CHARACTERS) != 0)
 
         return InputEvaluation(
             bypassVietnamese = bypass,
@@ -117,7 +119,8 @@ object InputContextEvaluator {
             imeActionId = action,
             shouldSendNewlineOnEnter = shouldSendNewline,
             isNumericField = isNumericField,
-            suppressSuggestions = hasNoSuggestions || isSecure
+            suppressSuggestions = hasNoSuggestions || isSecure,
+            isAllCapsField = isAllCapsField
         )
     }
 
