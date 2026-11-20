@@ -1,9 +1,11 @@
 an	ninh,toàn,tâm,lạc,dưỡng,ủi,táng,khang,bình
+anh	em,chị,ấy,ơi,trai,hùng
 biến	đổi,động,hóa,cố,thành,chất
 biển	cả,khơi,đảo,hồ,bạc,hiệu,báo
 buồn	bã,rầu,phiền,tủi,thảm,cười,ngủ
 bài	học,viết,toán,văn,hát,trừ,bạc,trí
 bán	buôn,lẻ,chạy,tháo,đảo
+bây	giờ
 bình	thường,tĩnh,luận,đẳng,dân,yên,an,chọn
 bạn	bè,hữu,đọc,đời,thân,đường,học,diễn
 bản	lĩnh,thân,tính,sắc,chất
@@ -22,6 +24,7 @@ cho	biết,thấy,rằng,phép,qua,vay,mượn
 chung	thủy,kết,cục,lòng,quanh,đôi
 chuyển	giao,đổi,động,biến,hóa,nhượng,tiếp,tải
 chính	xác,thức,trị,quyền,phủ,đáng,sách,yếu
+chúc	mừng,ngủ ngon,bạn,sức khỏe,may mắn
 chăm	sóc,chỉ,chú,bón
 chương	trình,mục,khoản,hồi,đoạn
 chậm	chạp,trễ,tiến
@@ -38,6 +41,7 @@ có	thể,nghĩa,ích,lẽ,hạn,mặt,tiền
 công	nghệ,việc,ty,nhân,dân,chức,cộng,nghiệp,bố,cuộc,đoàn,hiệu,khai,luận,lý,tâm,thức,tác,trình,văn,cụ,sức,lao,bằng,an
 cơ	quan,sở,chế,hội,cấu,bản,nhân,động,duyên,ngơi
 cạnh	tranh,khóe,tranh
+cảm	ơn,thấy,giác,xúc,thông,động
 cấp	thiết,bách,cứu,độ
 cần	thiết,cù,kiệm,mẫn,cẩu
 cổ	phần,phiếu,đông,tức,đại,xưa,điển,kính,vũ
@@ -48,6 +52,7 @@ dân	tộc,chủ,cư,sinh,chúng,gian,quyền,quân,trí,luật
 dễ	dàng,dãi,tính,chịu,thương
 dịch	vụ,thuật,bệnh,chuyển,hạch,tễ
 dữ	liệu,dội,dằn,tợn,kiện
+em	ơi,gái,trai,bé,ấy
 gia	đình,tăng,hạn,nhập,vị,súc,sản,cảnh,tộc,truyền
 giao	diện,thức,dịch,tiếp,thông,lưu,kèo,hội,hợp,nộp,nhận,phó
 giá	cả,trị,tiền,thành,thành,gốc,vốn,tăng,giảm,buốt
@@ -67,6 +72,7 @@ huấn	luyện,thị,từ,dụ
 hy	vọng,sinh
 hàng	hóa,không,hải,xóm,đầu,loạt,ngũ,quán
 hình	thành,ảnh,thức,tượng,thể,dáng,học,nhân
+hôm	nay,qua,kia,trước,sau
 hướng	dẫn,nội,ngoại,thiện,tâm,nghiệp
 hạnh	phúc,kiểm,nguyện,động
 hệ	thống,quả,số,điều hành,phái,sinh thái,lụy,cấp
@@ -79,7 +85,7 @@ khách	hàng,sạn,quan,trọ,thăm,khứa
 khám	phá,phá,bệnh,nghiệm,xét
 khí	hậu,tượng,quyển,thải,nén
 khó	khăn,chịu,tính,hiểu
-không	gian,khí,quân,thời gian,thể,phải,biết,có,cần,gian
+không	có,thể,phải,biết,cần,được,gian,khí,quân,thời gian
 khẳng	định,khiu
 khởi	động,nghiệp,đầu,xướng,nguồn,sắc,tố
 kinh	tế,doanh,nghiệm,phí,đô,hoàng,hãi,điển
@@ -108,8 +114,10 @@ nghiên	cứu,ngẫm,túc
 nghệ	thuật,sĩ,nhân
 nghị	quyết,định,viện,sự,lực,luận
 nguyện	vọng,ước,ý,cầu
+ngày	mai,nay,xưa,tháng,hội,lễ,nghỉ
 ngân	hàng,sách,quỹ,phiếu,khoản,vang
 ngôn	ngữ,từ,luận,tình
+người	ta,dùng,nhà,yêu,việt,lớn,khác
 nhanh	chóng,nhẹn,tay,trí
 nhà	nước,nước,cửa,trường,hàng,ga,xe,thờ,văn,thơ,báo,kho
 nhân	viên,dân,sự,loại,vật,đạo,cách,quyền,tố,tài,ái
@@ -193,9 +201,11 @@ tổ	chức,tiên,quốc,ấm,hợp,trưởng,phụ
 tự	động,do,nhiên,chủ,giác,hào,tin,trọng,tại,vệ
 vi	xử lý,mạch,phân,sinh,mô
 viện	sĩ,trưởng,trợ,bảo tàng
+việt	nam,kiều,ngữ,hóa
 vui	vẻ,mừng,tươi,thích,nhộn,sướng,lòng
 văn	hóa,nghệ,học,minh,bút,phong,tự
 vốn	tư,điều lệ,cổ phần,liếng,tự có,sẵn
+xin	chào,lỗi,cảm ơn,phép,mời,vui lòng
 xuất	khẩu,hiện,phát,bản,sắc,xứ,thân,viện
 xác	thực,nhận,định,suất,chết,xơ
 xây	dựng,đắp,lắp,dựng

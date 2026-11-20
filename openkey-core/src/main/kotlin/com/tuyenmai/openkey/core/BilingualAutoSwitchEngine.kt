@@ -362,7 +362,8 @@ object BilingualAutoSwitchEngine {
                 isTrailingDoubledToneEscape -> fullKeys.dropLast(1)
                 !state.wordStartOk -> fullKeys
                 state.droppedKeys.isNotEmpty() && dict.isEnglishWord(fullRawLower) && !dict.isEnglishWord(composedLower) -> fullKeys
-                dict.englishPriorityWords.contains(fullRawLower) -> fullKeys
+                dict.englishPriorityWords.contains(fullRawLower) &&
+                    !(state.vQuickConsonant != 0 && priority == LanguagePriority.VIETNAMESE_FIRST && dict.isValidVietnameseSyllable(composedLower)) -> fullKeys
                 priority == LanguagePriority.ENGLISH_FIRST && dict.isEnglishWord(fullRawLower) -> fullKeys
                 state.previousWords.lastOrNull()?.let { prev ->
                     prev.composedString.lowercase() == prev.rawString.lowercase() &&

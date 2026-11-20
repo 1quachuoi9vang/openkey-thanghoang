@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,9 +51,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.tuyenmai.openkey.android.ime.SharedPreferencesKeyValueStorage
 import com.tuyenmai.openkey.android.ui.KeyboardScreen
 import com.tuyenmai.openkey.core.AutoWordingEngine
@@ -60,6 +67,7 @@ import com.tuyenmai.openkey.core.OpenKeyL10n
 import com.tuyenmai.openkey.core.OpenKeyLogger
 import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.TextCommitterTarget
+import java.io.File
 
 /**
  * Settings & Onboarding Activity for OpenKey Android (REQ-010, ADR-010).
@@ -72,6 +80,12 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val dpContext = createDeviceProtectedStorageContext() ?: this
+        val baseCacheDir = dpContext.cacheDir ?: cacheDir
+        if (baseCacheDir != null) {
+            OpenKeyLogger.shared.configureLogFile(File(baseCacheDir, "OpenKeyAndroid/openkey-debug.log"))
+        }
 
         settingsStore = SharedPreferencesKeyValueStorage.sharedSettingsStore(this)
 
@@ -123,6 +137,9 @@ fun SettingsScreen(
     var shorthandExpansionEnabled by remember { mutableStateOf(settingsStore.shorthandExpansionEnabled) }
     var candidateSuggestionsEnabled by remember { mutableStateOf(settingsStore.candidateSuggestionsEnabled) }
     var doubleSpacePeriodEnabled by remember { mutableStateOf(settingsStore.doubleSpacePeriodEnabled) }
+    var standaloneWEnabled by remember { mutableStateOf(settingsStore.standaloneWEnabled) }
+    var quickTelexEnabled by remember { mutableStateOf(settingsStore.quickTelexEnabled) }
+    var quickConsonantEnabled by remember { mutableStateOf(settingsStore.quickConsonantEnabled) }
     var customShorthands by remember { mutableStateOf(settingsStore.getCustomShorthands()) }
 
     DisposableEffect(settingsStore) {
@@ -134,7 +151,10 @@ fun SettingsScreen(
                 useModernOrthography = if (settingsStore.useModernOrthography) 1 else 0,
                 restoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0,
                 useSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0,
-                bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
+                bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0,
+                standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+                quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+                quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
             )
             AutoWordingEngine.shared.syncConfig(
                 isEnabled = settingsStore.autoWordingEnabled,
@@ -166,6 +186,9 @@ fun SettingsScreen(
                 OpenKeySettingsStore.KEY_SHORTHAND_EXPANSION_ENABLED -> shorthandExpansionEnabled = settingsStore.shorthandExpansionEnabled
                 OpenKeySettingsStore.KEY_CANDIDATE_SUGGESTIONS_ENABLED -> candidateSuggestionsEnabled = settingsStore.candidateSuggestionsEnabled
                 OpenKeySettingsStore.KEY_DOUBLE_SPACE_PERIOD_ENABLED -> doubleSpacePeriodEnabled = settingsStore.doubleSpacePeriodEnabled
+                OpenKeySettingsStore.KEY_STANDALONE_W_ENABLED -> standaloneWEnabled = settingsStore.standaloneWEnabled
+                OpenKeySettingsStore.KEY_QUICK_TELEX_ENABLED -> quickTelexEnabled = settingsStore.quickTelexEnabled
+                OpenKeySettingsStore.KEY_QUICK_CONSONANT_ENABLED -> quickConsonantEnabled = settingsStore.quickConsonantEnabled
                 OpenKeySettingsStore.KEY_CUSTOM_SHORTHANDS -> customShorthands = settingsStore.getCustomShorthands()
             }
             syncPreviewEngine(key)
@@ -187,6 +210,27 @@ fun SettingsScreen(
 
     var imeEnabled by remember { mutableStateOf(isImeEnabled()) }
     var imeSelected by remember { mutableStateOf(isImeSelected()) }
+
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val lifecycle = lifecycleOwner?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                imeEnabled = isImeEnabled()
+                imeSelected = isImeSelected()
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+
+    val isWindowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(isWindowFocused) {
+        if (isWindowFocused) {
+            imeEnabled = isImeEnabled()
+            imeSelected = isImeSelected()
+        }
+    }
 
     // Live typing test field
     var testText by remember { mutableStateOf("") }
@@ -227,6 +271,8 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .safeDrawingPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -666,8 +712,50 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = engineStrings["smartSwitchTitle"] ?: "Per-App Smart Switch", fontSize = 14.sp)
+                    Text(text = engineStrings["smartSwitchTitle"] ?: "Per-App Smart Switch", fontSize = 14.sp, modifier = Modifier.weight(1f))
                     Switch(checked = useSmartSwitchKey, onCheckedChange = { settingsStore.useSmartSwitchKey = it })
+                }
+
+                // Standalone W -> ư at syllable start (Telex)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = engineStrings["standaloneWTitle"] ?: "Type 'w' as 'ư' at syllable start", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = standaloneWEnabled,
+                        onCheckedChange = { settingsStore.standaloneWEnabled = it },
+                        enabled = inputType == 0
+                    )
+                }
+
+                // Quick Telex (cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = engineStrings["quickTelexTitle"] ?: "Quick Telex", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = quickTelexEnabled,
+                        onCheckedChange = { settingsStore.quickTelexEnabled = it },
+                        enabled = inputType == 0
+                    )
+                }
+
+                // Quick Consonants (f=ph, j=gi, w=qu; g=ng, h=nh, k=ch)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = engineStrings["quickConsonantTitle"] ?: "Quick Consonants", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = quickConsonantEnabled,
+                        onCheckedChange = { settingsStore.quickConsonantEnabled = it },
+                        enabled = inputType == 0
+                    )
                 }
             }
         }

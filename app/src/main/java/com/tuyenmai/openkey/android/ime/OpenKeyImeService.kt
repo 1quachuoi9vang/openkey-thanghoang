@@ -2,8 +2,22 @@ package com.tuyenmai.openkey.android.ime
 
 import android.content.Intent
 import android.inputmethodservice.InputMethodService
+import android.os.Build
+import android.os.Bundle
+import android.util.Size
 import android.view.View
+import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InlineSuggestionsRequest
+import android.view.inputmethod.InlineSuggestionsResponse
+import android.view.inputmethod.InputMethodSubtype
+import android.widget.inline.InlinePresentationSpec
+import androidx.annotation.RequiresApi
+import androidx.autofill.inline.UiVersions
+import androidx.autofill.inline.v1.InlineSuggestionUi
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
@@ -17,9 +31,11 @@ import com.tuyenmai.openkey.core.EditorContext
 import com.tuyenmai.openkey.core.InputContextEvaluator
 import com.tuyenmai.openkey.core.InputEvaluation
 import com.tuyenmai.openkey.core.KeyboardSessionController
+import com.tuyenmai.openkey.core.OpenKeyLogger
 import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.SmartSwitchStore
 import com.tuyenmai.openkey.core.VietnameseEngine
+import java.io.File
 
 /**
  * OpenKey Android Input Method Service (REQ-001, REQ-005, REQ-006, REQ-009, ADR-005..ADR-010).
@@ -43,6 +59,9 @@ class OpenKeyImeService : InputMethodService() {
         internal set
 
     private var spellCheckerBridge: SystemSpellCheckerBridge? = null
+    private var settingsListener: ((String) -> Unit)? = null
+    private var inlineSuggestionViews by mutableStateOf<List<View>>(emptyList())
+    private var inlineSuggestionsSeq: Long = 0L
 
     var currentEvaluation: InputEvaluation = InputEvaluation(
         bypassVietnamese = false,
@@ -59,6 +78,13 @@ class OpenKeyImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         lifecycleOwner.onCreate()
+
+        val deviceProtectedContext = createDeviceProtectedStorageContext() ?: this
+        val baseCacheDir = deviceProtectedContext.cacheDir ?: cacheDir
+        if (baseCacheDir != null) {
+            OpenKeyLogger.shared.configureLogFile(File(baseCacheDir, "OpenKeyAndroid/openkey-debug.log"))
+            OpenKeyLogger.shared.pruneOutdatedLogsIfNeeded()
+        }
 
         com.tuyenmai.openkey.core.VietnameseDictionary.prewarmAsync()
 
@@ -101,9 +127,11 @@ class OpenKeyImeService : InputMethodService() {
 
         syncSettingsToEngine()
 
-        settingsStore.addListener { changedKey ->
+        val listener: (String) -> Unit = { changedKey ->
             syncSettingsToEngine(changedKey)
         }
+        settingsListener = listener
+        settingsStore.addListener(listener)
     }
 
     internal fun syncSettingsToEngine(changedKey: String? = null) {
@@ -125,7 +153,10 @@ class OpenKeyImeService : InputMethodService() {
             checkSpelling = if (settingsStore.checkSpelling) 1 else 0,
             restoreIfWrongSpelling = if (settingsStore.restoreIfWrongSpelling) 1 else 0,
             useSmartSwitchKey = if (settingsStore.useSmartSwitchKey) 1 else 0,
-            bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0
+            bilingualAutoRestore = if (settingsStore.bilingualAutoRestore) 1 else 0,
+            standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+            quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+            quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
         )
 
         autoWordingEngine.syncConfig(
@@ -155,6 +186,7 @@ class OpenKeyImeService : InputMethodService() {
                     autoWordingEngine = autoWordingEngine,
                     sessionController = sessionController,
                     enterActionLabel = currentEvaluation.enterActionLabel,
+                    inlineSuggestionViews = inlineSuggestionViews,
                     onOpenSettings = {
                         val intent = Intent(this@OpenKeyImeService, SettingsActivity::class.java).apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -163,6 +195,67 @@ class OpenKeyImeService : InputMethodService() {
                     }
                 )
             }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val density = resources.displayMetrics.density.coerceAtLeast(1f)
+        val heightPx = (40f * density).toInt()
+        val minWidthPx = (80f * density).toInt()
+        val maxWidthPx = (resources.displayMetrics.widthPixels * 0.75f).toInt().coerceAtLeast(minWidthPx)
+        val style = InlineSuggestionUi.newStyleBuilder().build()
+        val stylesBundle = UiVersions.newStylesBuilder().addStyle(style).build()
+        val spec = InlinePresentationSpec.Builder(
+            Size(minWidthPx, heightPx),
+            Size(maxWidthPx, heightPx)
+        ).setStyle(stylesBundle).build()
+        return InlineSuggestionsRequest.Builder(listOf(spec))
+            .setMaxSuggestionCount(3)
+            .build()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
+        val reqSeq = ++inlineSuggestionsSeq
+        val suggestions = response.inlineSuggestions
+        if (suggestions.isEmpty()) {
+            inlineSuggestionViews = emptyList()
+            return false
+        }
+        val density = resources.displayMetrics.density.coerceAtLeast(1f)
+        val heightPx = (40f * density).toInt()
+        val total = suggestions.size.coerceAtMost(3)
+        val inflated = arrayOfNulls<View>(total)
+        var remaining = total
+        for (i in 0 until total) {
+            suggestions[i].inflate(
+                this,
+                Size(ViewGroup.LayoutParams.WRAP_CONTENT, heightPx),
+                mainExecutor
+            ) { view ->
+                if (reqSeq != inlineSuggestionsSeq) return@inflate
+                inflated[i] = view
+                remaining--
+                if (remaining == 0) {
+                    inlineSuggestionViews = inflated.filterNotNull()
+                }
+            }
+        }
+        return true
+    }
+
+    override fun onCurrentInputMethodSubtypeChanged(newSubtype: InputMethodSubtype) {
+        super.onCurrentInputMethodSubtypeChanged(newSubtype)
+        if (::sessionController.isInitialized) {
+            val tag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                newSubtype.languageTag.ifEmpty { @Suppress("DEPRECATION") newSubtype.locale }
+            } else {
+                @Suppress("DEPRECATION") newSubtype.locale
+            }
+            sessionController.onSystemSubtypeChanged(tag)
         }
     }
 
@@ -193,6 +286,10 @@ class OpenKeyImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        if (!restarting) {
+            inlineSuggestionsSeq++
+            inlineSuggestionViews = emptyList()
+        }
         applyEditorInfo(attribute)
     }
 
@@ -203,11 +300,15 @@ class OpenKeyImeService : InputMethodService() {
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        inlineSuggestionsSeq++
+        inlineSuggestionViews = emptyList()
         lifecycleOwner.onPause()
         super.onFinishInputView(finishingInput)
     }
 
     override fun onFinishInput() {
+        inlineSuggestionsSeq++
+        inlineSuggestionViews = emptyList()
         VietnameseEngine.resetSession()
         autoWordingEngine.clearCandidates()
         batchCoordinator.resetExpectedCursor(0)
@@ -231,9 +332,22 @@ class OpenKeyImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        inlineSuggestionsSeq++
+        inlineSuggestionViews = emptyList()
+        settingsListener?.let { listener ->
+            if (::settingsStore.isInitialized) {
+                settingsStore.removeListener(listener)
+            }
+        }
+        settingsListener = null
+        if (::sessionController.isInitialized) {
+            sessionController.dispose()
+        }
         spellCheckerBridge?.close()
         spellCheckerBridge = null
-        autoWordingEngine.spellCheckerBridge = null
+        if (::autoWordingEngine.isInitialized) {
+            autoWordingEngine.spellCheckerBridge = null
+        }
         lifecycleOwner.onDestroy()
         super.onDestroy()
     }

@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -75,6 +78,7 @@ fun KeyboardScreen(
     autoWordingEngine: AutoWordingEngine,
     sessionController: KeyboardSessionController? = null,
     enterActionLabel: String = "↵",
+    inlineSuggestionViews: List<android.view.View> = emptyList(),
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -103,6 +107,9 @@ fun KeyboardScreen(
         controller.addUiStateListener(listener)
         onDispose {
             controller.removeUiStateListener(listener)
+            if (sessionController == null) {
+                controller.dispose()
+            }
         }
     }
 
@@ -143,9 +150,14 @@ fun KeyboardScreen(
     var isCapsLock by remember { mutableStateOf(false) }
     var lastShiftTapMs by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(editorUiState.isAutoShifted, editorUiState.capsSyncSeq) {
+    LaunchedEffect(editorUiState.packageName, editorUiState.isNumericField) {
+        currentLayer = KeyboardLayer.QWERTY
+        isCapsLock = false
+    }
+
+    LaunchedEffect(editorUiState.isAutoShifted, editorUiState.isAllCapsField, editorUiState.capsSyncSeq) {
         if (!isCapsLock) {
-            isShifted = editorUiState.isAutoShifted
+            isShifted = editorUiState.isAutoShifted || editorUiState.isAllCapsField
         }
     }
 
@@ -172,9 +184,30 @@ fun KeyboardScreen(
     val handleKeyAction: (KeyAction, KeyModel) -> Unit = { action, keyModel ->
         when (action) {
             is KeyAction.CommitChar -> {
-                controller.onKeyAction(action)
-                if (controller.shouldClearShiftAfterCommitChar(isShifted = isShifted, isCapsLocked = isCapsLock)) {
-                    isShifted = false
+                when (action.char) {
+                    KeyboardGestureController.QUICK_ACTION_SETTINGS -> {
+                        onOpenSettings()
+                    }
+                    KeyboardGestureController.QUICK_ACTION_ONE_HANDED -> {
+                        val nextMode = when (oneHandedMode) {
+                            OneHandedMode.OFF -> OneHandedMode.LEFT
+                            OneHandedMode.LEFT -> OneHandedMode.RIGHT
+                            OneHandedMode.RIGHT -> OneHandedMode.OFF
+                        }
+                        settingsStore.oneHandedMode = nextMode
+                    }
+                    else -> {
+                        val effectiveAction = if (action.char.length == 1 && action.char[0].isLetter()) {
+                            val liveChar = if (isShifted || isCapsLock) action.char.uppercase() else action.char.lowercase()
+                            if (liveChar == action.char) action else KeyAction.CommitChar(liveChar)
+                        } else {
+                            action
+                        }
+                        controller.onKeyAction(effectiveAction)
+                        if (controller.shouldClearShiftAfterCommitChar(isShifted = isShifted, isCapsLocked = isCapsLock)) {
+                            isShifted = false
+                        }
+                    }
                 }
             }
             is KeyAction.Backspace,
@@ -226,7 +259,7 @@ fun KeyboardScreen(
             .background(Color(palette.backgroundColor))
     ) {
         // Candidate Strip / Top Toolbar (42dp scaled) isolated from Key Grid recomposition (REQ-014, REQ-025)
-        if (!editorUiState.isNumericField) {
+        if (!editorUiState.isNumericField || inlineSuggestionViews.isNotEmpty()) {
             LiveCandidateStripHost(
                 autoWordingEngine = autoWordingEngine,
                 heightDp = metrics.candidateStripHeightDp,
@@ -234,6 +267,7 @@ fun KeyboardScreen(
                 language = effectiveLanguage,
                 inputType = inputType,
                 oneHandedMode = metrics.effectiveOneHandedMode,
+                inlineSuggestionViews = inlineSuggestionViews,
                 onCandidateSelected = handleCandidateSelected,
                 onLanguageToggled = {
                     controller.onKeyAction(KeyAction.SwitchLanguage)
@@ -450,9 +484,11 @@ fun KeyboardScreen(
             }
         }
 
-        // Bottom Chin Padding (14dp default in portrait above gesture navigation bar)
-        if (metrics.effectiveBottomChinDp > 0f) {
-            Spacer(modifier = Modifier.height(metrics.effectiveBottomChinDp.dp))
+        // Bottom Chin Padding (respecting Android 15 edge-to-edge 3-button / gesture navigationBars)
+        val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val effectiveChinDp = maxOf(metrics.effectiveBottomChinDp.dp, navBarBottomDp)
+        if (effectiveChinDp > 0.dp) {
+            Spacer(modifier = Modifier.height(effectiveChinDp))
         }
     }
 }
@@ -469,6 +505,7 @@ private fun LiveCandidateStripHost(
     language: Int,
     inputType: Int,
     oneHandedMode: OneHandedMode,
+    inlineSuggestionViews: List<android.view.View> = emptyList(),
     onCandidateSelected: (WordCandidate) -> Unit,
     onLanguageToggled: () -> Unit,
     onInputTypeToggled: () -> Unit,
@@ -477,10 +514,11 @@ private fun LiveCandidateStripHost(
     modifier: Modifier = Modifier
 ) {
     var candidates by remember { mutableStateOf(autoWordingEngine.activeCandidates) }
+    val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     DisposableEffect(autoWordingEngine) {
         val listener: (List<WordCandidate>) -> Unit = { updated ->
             if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                mainHandler.post {
                     candidates = updated
                 }
             } else {
@@ -488,6 +526,7 @@ private fun LiveCandidateStripHost(
             }
         }
         autoWordingEngine.addCandidatesListener(listener)
+        candidates = autoWordingEngine.activeCandidates
         onDispose {
             autoWordingEngine.removeCandidatesListener(listener)
         }
@@ -500,6 +539,7 @@ private fun LiveCandidateStripHost(
         language = language,
         inputType = inputType,
         oneHandedMode = oneHandedMode,
+        inlineSuggestionViews = inlineSuggestionViews,
         onCandidateSelected = onCandidateSelected,
         onLanguageToggled = onLanguageToggled,
         onInputTypeToggled = onInputTypeToggled,

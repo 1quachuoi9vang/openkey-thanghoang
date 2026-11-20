@@ -19,6 +19,9 @@ data class OpenKeySettingsSnapshot(
     val candidateSuggestionsEnabled: Boolean = true,
     val doubleSpacePeriodEnabled: Boolean = false,
     val autoWordingEnabled: Boolean = true,
+    val standaloneWEnabled: Boolean = true,
+    val quickTelexEnabled: Boolean = false,
+    val quickConsonantEnabled: Boolean = false,
     val debugModeEnabled: Boolean = false
 )
 
@@ -43,6 +46,9 @@ class OpenKeySettingsStore(private val storage: KeyValueStorage) {
         const val KEY_SHORTHAND_EXPANSION_ENABLED = "setting_shorthand_expansion_enabled"
         const val KEY_CANDIDATE_SUGGESTIONS_ENABLED = "setting_candidate_suggestions_enabled"
         const val KEY_DOUBLE_SPACE_PERIOD_ENABLED = "setting_double_space_period_enabled"
+        const val KEY_STANDALONE_W_ENABLED = "setting_standalone_w_enabled"
+        const val KEY_QUICK_TELEX_ENABLED = "setting_quick_telex_enabled"
+        const val KEY_QUICK_CONSONANT_ENABLED = "setting_quick_consonant_enabled"
         const val KEY_CUSTOM_SHORTHANDS = "setting_custom_shorthands"
         const val KEY_DEBUG_MODE_ENABLED = "openkey.debugModeEnabled"
     }
@@ -214,6 +220,27 @@ class OpenKeySettingsStore(private val storage: KeyValueStorage) {
             notifyChanged(KEY_AUTO_WORDING_ENABLED)
         }
 
+    var standaloneWEnabled: Boolean
+        get() = storage.getBoolean(KEY_STANDALONE_W_ENABLED, true)
+        set(value) {
+            storage.putBoolean(KEY_STANDALONE_W_ENABLED, value)
+            notifyChanged(KEY_STANDALONE_W_ENABLED)
+        }
+
+    var quickTelexEnabled: Boolean
+        get() = storage.getBoolean(KEY_QUICK_TELEX_ENABLED, false)
+        set(value) {
+            storage.putBoolean(KEY_QUICK_TELEX_ENABLED, value)
+            notifyChanged(KEY_QUICK_TELEX_ENABLED)
+        }
+
+    var quickConsonantEnabled: Boolean
+        get() = storage.getBoolean(KEY_QUICK_CONSONANT_ENABLED, false)
+        set(value) {
+            storage.putBoolean(KEY_QUICK_CONSONANT_ENABLED, value)
+            notifyChanged(KEY_QUICK_CONSONANT_ENABLED)
+        }
+
     var debugModeEnabled: Boolean
         get() = storage.getBoolean(Keys.KEY_DEBUG_MODE_ENABLED, false)
         set(value) {
@@ -242,6 +269,9 @@ class OpenKeySettingsStore(private val storage: KeyValueStorage) {
         candidateSuggestionsEnabled = candidateSuggestionsEnabled,
         doubleSpacePeriodEnabled = doubleSpacePeriodEnabled,
         autoWordingEnabled = autoWordingEnabled,
+        standaloneWEnabled = standaloneWEnabled,
+        quickTelexEnabled = quickTelexEnabled,
+        quickConsonantEnabled = quickConsonantEnabled,
         debugModeEnabled = debugModeEnabled
     )
 

@@ -29,6 +29,9 @@ class VietnameseEngineState {
     var vFixRecommendBrowser: Int = 1
     var vUseSmartSwitchKey: Int = 1
     var vBilingualAutoRestore: Int = 1
+    var vStandaloneW: Int = 1
+    var vQuickTelex: Int = 0
+    var vQuickConsonant: Int = 0
 
     var phonotacticRepairHook: ((UIntArray, Int, Int, Int, Int, Boolean) -> Boolean)? = null
 
@@ -445,15 +448,19 @@ class VietnameseEngineState {
     fun checkLiveMidWordAutoEscape(keyCode: UShort): Boolean {
         if (vInputType != 0 || vBilingualAutoRestore == 0) return false
 
-        // 1. Double-Consonant rr/ff/ss + Vowel Live Mid-Word Restoration
-        // ("correct", "error", "errors", "sorry", "current", "office", "coffee", "message", "issue")
+        // 1. Double-Consonant rr/ff/ss + Letter Live Mid-Word Restoration
+        // ("correct", "error", "office", "offset", "offline", "offload", "offshore", "passport", "message")
         if (tempDisableKey && droppedKeys.isNotEmpty() && rawStateIndex >= 4) {
-            if (keyCode == KEY_A || keyCode == KEY_E || keyCode == KEY_I || keyCode == KEY_O || keyCode == KEY_U || keyCode == KEY_Y) {
+            val isAlphaContinuation = !VietnameseData.isNumberKey(keyCode) &&
+                    !charKeyCode.contains(keyCode) &&
+                    keyCode != KEY_SPACE &&
+                    keyCode != KEY_DELETE
+            if (isAlphaContinuation) {
                 val rawBeforeLen = rawStateIndex - 1
                 if (rawBeforeLen >= 2) {
                     val c1 = (rawKeyStates[rawBeforeLen - 1] and CHAR_MASK).toUShort()
                     val c2 = (rawKeyStates[rawBeforeLen - 2] and CHAR_MASK).toUShort()
-                    if (c1 == c2 && (c1 == KEY_R || c1 == KEY_F || c1 == KEY_S || c1 == KEY_J || c1 == KEY_X)) {
+                    if (c1 == c2 && keyCode != c1 && (c1 == KEY_R || c1 == KEY_F || c1 == KEY_S || c1 == KEY_J || c1 == KEY_X)) {
                         val sb = StringBuilder()
                         for (i in 0 until rawBeforeLen) {
                             val c = VietnameseData.keyCodeToCharacter(rawKeyStates[i])
@@ -548,7 +555,10 @@ class VietnameseEngineState {
         restoreIfWrongSpelling: Int? = null,
         fixRecommendBrowser: Int? = null,
         useSmartSwitchKey: Int? = null,
-        bilingualAutoRestore: Int? = null
+        bilingualAutoRestore: Int? = null,
+        standaloneW: Int? = null,
+        quickTelex: Int? = null,
+        quickConsonant: Int? = null
     ) {
         lock.withLock {
             if (language != null) vLanguage = language
@@ -562,6 +572,9 @@ class VietnameseEngineState {
             if (fixRecommendBrowser != null) vFixRecommendBrowser = fixRecommendBrowser
             if (useSmartSwitchKey != null) vUseSmartSwitchKey = useSmartSwitchKey
             if (bilingualAutoRestore != null) vBilingualAutoRestore = bilingualAutoRestore
+            if (standaloneW != null) vStandaloneW = standaloneW
+            if (quickTelex != null) vQuickTelex = quickTelex
+            if (quickConsonant != null) vQuickConsonant = quickConsonant
         }
     }
 
@@ -948,6 +961,88 @@ class VietnameseEngineState {
             }
         }
 
+        if (vInputType == 0 && !tempDisableKey) {
+            if (vQuickConsonant != 0) {
+                if (index == 0 && (keyCode == KEY_F || keyCode == KEY_J || keyCode == KEY_W)) {
+                    val (c1, c2) = when (keyCode) {
+                        KEY_F -> Pair(KEY_P, KEY_H)
+                        KEY_J -> Pair(KEY_G, KEY_I)
+                        else -> Pair(KEY_Q, KEY_U)
+                    }
+                    insertKey(c1, isCaps, isCheckSpellingFlag = false)
+                    insertKey(c2, false)
+                    hookOutput.code = HookCodeState.WILL_PROCESS
+                    hookOutput.backspaceCount = 0
+                    hookOutput.newCharCount = 2
+                    hookOutput.extCode = 3
+                    hookOutput.charData[1] = GET(typingWord[0])
+                    hookOutput.charData[0] = GET(typingWord[1])
+                    return
+                }
+                val prevIsNucleusVowel = index >= 1 &&
+                        !VietnameseData.isConsonant(CHR(index - 1)) &&
+                        !(index == 2 && CHR(0) == KEY_Q && CHR(1) == KEY_U)
+                if (prevIsNucleusVowel && (keyCode == KEY_G || keyCode == KEY_H || keyCode == KEY_K)) {
+                    val (c1, c2) = when (keyCode) {
+                        KEY_G -> Pair(KEY_N, KEY_G)
+                        KEY_H -> Pair(KEY_N, KEY_H)
+                        else -> Pair(KEY_C, KEY_H)
+                    }
+                    insertKey(c1, false, isCheckSpellingFlag = false)
+                    insertKey(c2, false)
+                    hookOutput.code = HookCodeState.WILL_PROCESS
+                    hookOutput.backspaceCount = 0
+                    hookOutput.newCharCount = 2
+                    hookOutput.extCode = 3
+                    hookOutput.charData[1] = GET(typingWord[index - 2])
+                    hookOutput.charData[0] = GET(typingWord[index - 1])
+                    checkGrammar(deltaBackSpace = -2)
+                    return
+                }
+            }
+
+            if (vQuickTelex != 0) {
+                val isRedundantQuickGlide = index == 2 && rawStateIndex >= 3 && (
+                        (CHR(0) == KEY_G && CHR(1) == KEY_I && keyCode == KEY_I && (rawKeyStates[0] and CHAR_MASK).toUShort() == KEY_G && (rawKeyStates[1] and CHAR_MASK).toUShort() == KEY_G) ||
+                        (CHR(0) == KEY_Q && CHR(1) == KEY_U && keyCode == KEY_U && (rawKeyStates[0] and CHAR_MASK).toUShort() == KEY_Q && (rawKeyStates[1] and CHAR_MASK).toUShort() == KEY_Q)
+                )
+                if (isRedundantQuickGlide) {
+                    hookOutput.code = HookCodeState.WILL_PROCESS
+                    hookOutput.backspaceCount = 0
+                    hookOutput.newCharCount = 0
+                    hookOutput.extCode = 3
+                    return
+                }
+                val quickMapped: UShort? = if (index == 1 && keyCode == CHR(0)) {
+                    when (keyCode) {
+                        KEY_C, KEY_K, KEY_P, KEY_T -> KEY_H
+                        KEY_G -> KEY_I
+                        KEY_N -> KEY_G
+                        KEY_Q -> KEY_U
+                        else -> null
+                    }
+                } else if (index >= 2 && keyCode == CHR(index - 1) && !VietnameseData.isConsonant(CHR(index - 2))) {
+                    when (keyCode) {
+                        KEY_C -> KEY_H
+                        KEY_N -> KEY_G
+                        else -> null
+                    }
+                } else {
+                    null
+                }
+                if (quickMapped != null) {
+                    insertKey(quickMapped, false)
+                    hookOutput.code = HookCodeState.WILL_PROCESS
+                    hookOutput.backspaceCount = 0
+                    hookOutput.newCharCount = 1
+                    hookOutput.extCode = 3
+                    hookOutput.charData[0] = GET(typingWord[index - 1])
+                    checkGrammar(deltaBackSpace = -1)
+                    return
+                }
+            }
+        }
+
         if (!isSpecialKey(keyCode) || tempDisableKey) {
             hookOutput.code = HookCodeState.DO_NOTHING
             hookOutput.backspaceCount = 0
@@ -1060,11 +1155,15 @@ object VietnameseEngine {
         restoreIfWrongSpelling: Int? = null,
         fixRecommendBrowser: Int? = null,
         useSmartSwitchKey: Int? = null,
-        bilingualAutoRestore: Int? = null
+        bilingualAutoRestore: Int? = null,
+        standaloneW: Int? = null,
+        quickTelex: Int? = null,
+        quickConsonant: Int? = null
     ) {
         VietnameseEngineState.shared.syncConfig(
             language, inputType, checkSpelling, useModernOrthography,
-            restoreIfWrongSpelling, fixRecommendBrowser, useSmartSwitchKey, bilingualAutoRestore
+            restoreIfWrongSpelling, fixRecommendBrowser, useSmartSwitchKey, bilingualAutoRestore,
+            standaloneW, quickTelex, quickConsonant
         )
     }
 

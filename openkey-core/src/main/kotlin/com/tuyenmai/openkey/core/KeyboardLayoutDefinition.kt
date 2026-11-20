@@ -222,7 +222,7 @@ object KeyboardLayoutDefinition {
                     }
                 )
 
-                val row3Symbols = listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\")
+                val row3Symbols = listOf("₫", "€", "£", "¥", "¢", "°", "=", "{", "}", "\\")
                 val row3 = KeyRow(
                     row3Symbols.map { sym ->
                         KeyModel(primaryLabel = sym, weight = 0.10f, action = KeyAction.CommitChar(sym))

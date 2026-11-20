@@ -61,14 +61,96 @@ class KeyboardSessionController(
 
     private val uiStateListeners = CopyOnWriteArrayList<(EditorUiState) -> Unit>()
 
-    init {
-        editorUiState = EditorUiState(language = settingsStore.language)
-        settingsStore.addListener { key ->
-            if (key == OpenKeySettingsStore.KEY_LANGUAGE) {
+    private val settingsListener: (String) -> Unit = { key ->
+        when (key) {
+            OpenKeySettingsStore.KEY_LANGUAGE -> {
                 if (editorUiState.language != settingsStore.language) {
                     updateEditorUiState(editorUiState.copy(language = settingsStore.language))
                 }
             }
+            OpenKeySettingsStore.KEY_AUTO_WORDING_ENABLED,
+            OpenKeySettingsStore.KEY_GRAMMAR_REPAIR_ENABLED,
+            OpenKeySettingsStore.KEY_SHORTHAND_EXPANSION_ENABLED,
+            OpenKeySettingsStore.KEY_CANDIDATE_SUGGESTIONS_ENABLED,
+            OpenKeySettingsStore.KEY_DOUBLE_SPACE_PERIOD_ENABLED,
+            OpenKeySettingsStore.KEY_CUSTOM_SHORTHANDS -> {
+                syncAutoWordingFromSettings()
+            }
+            OpenKeySettingsStore.KEY_STANDALONE_W_ENABLED,
+            OpenKeySettingsStore.KEY_QUICK_TELEX_ENABLED,
+            OpenKeySettingsStore.KEY_QUICK_CONSONANT_ENABLED -> {
+                VietnameseEngine.syncConfig(
+                    standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+                    quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+                    quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
+                )
+            }
+        }
+    }
+
+    init {
+        editorUiState = EditorUiState(language = settingsStore.language)
+        syncAutoWordingFromSettings()
+        VietnameseEngine.syncConfig(
+            standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+            quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+            quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
+        )
+        settingsStore.addListener(settingsListener)
+    }
+
+    private fun syncAutoWordingFromSettings() {
+        autoWordingEngine.syncConfig(
+            isEnabled = settingsStore.autoWordingEnabled,
+            grammarRepair = settingsStore.grammarRepairEnabled,
+            shorthandExpansion = settingsStore.shorthandExpansionEnabled,
+            candidateSuggestions = settingsStore.candidateSuggestionsEnabled,
+            doubleSpacePeriod = settingsStore.doubleSpacePeriodEnabled
+        )
+        val shorthands = settingsStore.getCustomShorthands()
+        if (shorthands.isNotEmpty() || autoWordingEngine.customShorthands.isNotEmpty()) {
+            autoWordingEngine.customShorthands = shorthands.toMutableMap()
+        }
+    }
+
+    fun dispose() {
+        settingsStore.removeListener(settingsListener)
+        uiStateListeners.clear()
+    }
+
+    /**
+     * Synchronizes active keyboard language when the user selects a system IME subtype
+     * (`vi_VN` -> 1, `en_US` -> 0) from Android's Input Method Picker.
+     */
+    fun onSystemSubtypeChanged(locale: String) {
+        val nextLang = when {
+            locale.startsWith("vi", ignoreCase = true) -> 1
+            locale.startsWith("en", ignoreCase = true) -> 0
+            else -> return
+        }
+        if (nextLang != editorUiState.language) {
+            _composingWord = ""
+            _previousWord = ""
+            _englishWordStartOk = true
+            _canDoubleSpacePeriod = false
+            VietnameseEngine.syncConfig(language = nextLang)
+            VietnameseEngine.resetSession()
+            autoWordingEngine.clearCandidates()
+            if (settingsStore.useSmartSwitchKey && editorUiState.packageName.isNotBlank()) {
+                smartSwitchStore.setAppLanguage(editorUiState.packageName, nextLang)
+            }
+            updateEditorUiState(editorUiState.copy(language = nextLang))
+        }
+    }
+
+    private fun applyLanguageSwitchIfRequested(snapshot: HookSnapshot) {
+        val requested = snapshot.languageSwitchRequest
+        if (requested in 0..1 && requested != editorUiState.language) {
+            VietnameseEngine.syncConfig(language = requested)
+            if (settingsStore.useSmartSwitchKey && editorUiState.packageName.isNotBlank()) {
+                smartSwitchStore.setAppLanguage(editorUiState.packageName, requested)
+            }
+            updateEditorUiState(editorUiState.copy(language = requested))
         }
     }
 
@@ -283,7 +365,7 @@ class KeyboardSessionController(
                         return true
                     }
 
-                    VietnameseEngine.handleKeyEventCommitFirst(keyCode, caps, false) { snapshot ->
+                    val snap = VietnameseEngine.handleKeyEventCommitFirst(keyCode, caps, false) { snapshot ->
                         if (snapshot.code == HookCodeState.WILL_PROCESS ||
                             snapshot.code == HookCodeState.RESTORE ||
                             snapshot.code == HookCodeState.RESTORE_AND_START_NEW_SESSION
@@ -296,6 +378,7 @@ class KeyboardSessionController(
                     if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
                     val wordContext = VietnameseEngine.getWordContext()
                     _composingWord = wordContext.composedWord
+                    applyLanguageSwitchIfRequested(snap)
                     return true
                 } else {
                     _composingWord = ""
@@ -443,7 +526,7 @@ class KeyboardSessionController(
                 }
                 _composingWord = ""
                 val keyCode = VietnameseData.KEY_SPACE.toInt()
-                VietnameseEngine.handleKeyEventCommitFirst(keyCode, 0, false) { snapshot ->
+                val snap = VietnameseEngine.handleKeyEventCommitFirst(keyCode, 0, false) { snapshot ->
                     if (snapshot.code == HookCodeState.WILL_PROCESS ||
                         snapshot.code == HookCodeState.RESTORE ||
                         snapshot.code == HookCodeState.RESTORE_AND_START_NEW_SESSION
@@ -458,6 +541,7 @@ class KeyboardSessionController(
                     _lastWordSpaceTimestampMs = nowMs
                 }
                 if (editorUiState.suppressSuggestions) autoWordingEngine.clearCandidates()
+                applyLanguageSwitchIfRequested(snap)
                 return true
             }
 
@@ -476,7 +560,7 @@ class KeyboardSessionController(
                             batchCoordinator.commitBatch(target, rep.first, rep.second)
                         }
                     } else if (editorUiState.language == 1) {
-                        VietnameseEngine.handleKeyEventCommitFirst(VietnameseData.KEY_RETURN.toInt(), 0, false) { snapshot ->
+                        val snap = VietnameseEngine.handleKeyEventCommitFirst(VietnameseData.KEY_RETURN.toInt(), 0, false) { snapshot ->
                             if ((snapshot.code == HookCodeState.WILL_PROCESS ||
                                         snapshot.code == HookCodeState.RESTORE ||
                                         snapshot.code == HookCodeState.RESTORE_AND_START_NEW_SESSION) &&
@@ -485,6 +569,7 @@ class KeyboardSessionController(
                                 batchCoordinator.commitBatch(target, snapshot.backspaceCount, snapshot.decodedString)
                             }
                         }
+                        applyLanguageSwitchIfRequested(snap)
                     }
                 }
                 _composingWord = ""
