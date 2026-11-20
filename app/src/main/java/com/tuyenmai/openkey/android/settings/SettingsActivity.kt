@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,9 +51,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 import com.tuyenmai.openkey.android.ime.SharedPreferencesKeyValueStorage
 import com.tuyenmai.openkey.android.ui.KeyboardScreen
 import com.tuyenmai.openkey.core.AutoWordingEngine
@@ -60,6 +67,7 @@ import com.tuyenmai.openkey.core.OpenKeyL10n
 import com.tuyenmai.openkey.core.OpenKeyLogger
 import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.TextCommitterTarget
+import java.io.File
 
 /**
  * Settings & Onboarding Activity for OpenKey Android (REQ-010, ADR-010).
@@ -72,6 +80,16 @@ class SettingsActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val dpContext = try {
+            createDeviceProtectedStorageContext() ?: this
+        } catch (_: Exception) {
+            this
+        }
+        val baseCacheDir = dpContext.cacheDir ?: cacheDir
+        if (baseCacheDir != null) {
+            OpenKeyLogger.shared.configureLogFile(File(baseCacheDir, "OpenKeyAndroid/openkey-debug.log"))
+        }
 
         settingsStore = SharedPreferencesKeyValueStorage.sharedSettingsStore(this)
 
@@ -188,6 +206,27 @@ fun SettingsScreen(
     var imeEnabled by remember { mutableStateOf(isImeEnabled()) }
     var imeSelected by remember { mutableStateOf(isImeSelected()) }
 
+    val lifecycleOwner = context as? LifecycleOwner
+    DisposableEffect(lifecycleOwner) {
+        val lifecycle = lifecycleOwner?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                imeEnabled = isImeEnabled()
+                imeSelected = isImeSelected()
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+
+    val isWindowFocused = LocalWindowInfo.current.isWindowFocused
+    LaunchedEffect(isWindowFocused) {
+        if (isWindowFocused) {
+            imeEnabled = isImeEnabled()
+            imeSelected = isImeSelected()
+        }
+    }
+
     // Live typing test field
     var testText by remember { mutableStateOf("") }
     val previewCoordinator = remember { BatchReplacementCoordinator() }
@@ -227,6 +266,8 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .safeDrawingPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)

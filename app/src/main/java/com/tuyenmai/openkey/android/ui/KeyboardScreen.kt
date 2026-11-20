@@ -10,9 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -103,6 +106,9 @@ fun KeyboardScreen(
         controller.addUiStateListener(listener)
         onDispose {
             controller.removeUiStateListener(listener)
+            if (sessionController == null) {
+                controller.dispose()
+            }
         }
     }
 
@@ -450,9 +456,11 @@ fun KeyboardScreen(
             }
         }
 
-        // Bottom Chin Padding (14dp default in portrait above gesture navigation bar)
-        if (metrics.effectiveBottomChinDp > 0f) {
-            Spacer(modifier = Modifier.height(metrics.effectiveBottomChinDp.dp))
+        // Bottom Chin Padding (respecting Android 15 edge-to-edge 3-button / gesture navigationBars)
+        val navBarBottomDp = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+        val effectiveChinDp = maxOf(metrics.effectiveBottomChinDp.dp, navBarBottomDp)
+        if (effectiveChinDp > 0.dp) {
+            Spacer(modifier = Modifier.height(effectiveChinDp))
         }
     }
 }
@@ -477,10 +485,11 @@ private fun LiveCandidateStripHost(
     modifier: Modifier = Modifier
 ) {
     var candidates by remember { mutableStateOf(autoWordingEngine.activeCandidates) }
+    val mainHandler = remember { android.os.Handler(android.os.Looper.getMainLooper()) }
     DisposableEffect(autoWordingEngine) {
         val listener: (List<WordCandidate>) -> Unit = { updated ->
             if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                mainHandler.post {
                     candidates = updated
                 }
             } else {
@@ -488,6 +497,7 @@ private fun LiveCandidateStripHost(
             }
         }
         autoWordingEngine.addCandidatesListener(listener)
+        candidates = autoWordingEngine.activeCandidates
         onDispose {
             autoWordingEngine.removeCandidatesListener(listener)
         }

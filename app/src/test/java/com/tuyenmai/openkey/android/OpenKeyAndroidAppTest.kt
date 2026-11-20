@@ -757,5 +757,9 @@ class OpenKeyAndroidAppTest {
         assertTrue(imeText.contains("getCursorCapsMode"))
         assertTrue(imeText.contains("VietnameseEngine.syncConfig("))
         assertTrue("OpenKeyImeService must wire single-fire keyCodeSender", imeText.contains("keyCodeSender = { sendDownUpKeyEvents(it) }"))
+        assertTrue("OpenKeyImeService must configure Direct-Boot device-protected log file", imeText.contains("configureLogFile"))
+        assertTrue("OpenKeyImeService must dispose sessionController in onDestroy", imeText.contains("sessionController.dispose()"))
+        assertTrue("SettingsActivity must apply safeDrawingPadding and imePadding for Android 15 edge-to-edge", settingsFile.readText().contains("safeDrawingPadding()") && settingsFile.readText().contains("imePadding()"))
+        assertTrue("KeyboardScreen must honor WindowInsets.navigationBars for 3-button nav safety", screenText.contains("WindowInsets.navigationBars"))
     }
 }

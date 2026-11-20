@@ -17,9 +17,11 @@ import com.tuyenmai.openkey.core.EditorContext
 import com.tuyenmai.openkey.core.InputContextEvaluator
 import com.tuyenmai.openkey.core.InputEvaluation
 import com.tuyenmai.openkey.core.KeyboardSessionController
+import com.tuyenmai.openkey.core.OpenKeyLogger
 import com.tuyenmai.openkey.core.OpenKeySettingsStore
 import com.tuyenmai.openkey.core.SmartSwitchStore
 import com.tuyenmai.openkey.core.VietnameseEngine
+import java.io.File
 
 /**
  * OpenKey Android Input Method Service (REQ-001, REQ-005, REQ-006, REQ-009, ADR-005..ADR-010).
@@ -43,6 +45,7 @@ class OpenKeyImeService : InputMethodService() {
         internal set
 
     private var spellCheckerBridge: SystemSpellCheckerBridge? = null
+    private var settingsListener: ((String) -> Unit)? = null
 
     var currentEvaluation: InputEvaluation = InputEvaluation(
         bypassVietnamese = false,
@@ -59,6 +62,17 @@ class OpenKeyImeService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         lifecycleOwner.onCreate()
+
+        val deviceProtectedContext = try {
+            createDeviceProtectedStorageContext() ?: this
+        } catch (_: Exception) {
+            this
+        }
+        val baseCacheDir = deviceProtectedContext.cacheDir ?: cacheDir
+        if (baseCacheDir != null) {
+            OpenKeyLogger.shared.configureLogFile(File(baseCacheDir, "OpenKeyAndroid/openkey-debug.log"))
+            OpenKeyLogger.shared.pruneOutdatedLogsIfNeeded()
+        }
 
         com.tuyenmai.openkey.core.VietnameseDictionary.prewarmAsync()
 
@@ -101,9 +115,11 @@ class OpenKeyImeService : InputMethodService() {
 
         syncSettingsToEngine()
 
-        settingsStore.addListener { changedKey ->
+        val listener: (String) -> Unit = { changedKey ->
             syncSettingsToEngine(changedKey)
         }
+        settingsListener = listener
+        settingsStore.addListener(listener)
     }
 
     internal fun syncSettingsToEngine(changedKey: String? = null) {
@@ -231,9 +247,20 @@ class OpenKeyImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        settingsListener?.let { listener ->
+            if (::settingsStore.isInitialized) {
+                settingsStore.removeListener(listener)
+            }
+        }
+        settingsListener = null
+        if (::sessionController.isInitialized) {
+            sessionController.dispose()
+        }
         spellCheckerBridge?.close()
         spellCheckerBridge = null
-        autoWordingEngine.spellCheckerBridge = null
+        if (::autoWordingEngine.isInitialized) {
+            autoWordingEngine.spellCheckerBridge = null
+        }
         lifecycleOwner.onDestroy()
         super.onDestroy()
     }

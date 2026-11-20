@@ -593,6 +593,7 @@ class AutoWordingEngine private constructor() {
                 charCode == ' '.code
 
         if (isBreak) {
+            val isSpaceKey = charCode == VietnameseData.KEY_SPACE.toInt() || charCode == ' '.code
             val breakChar = when (charCode) {
                 VietnameseData.KEY_SPACE.toInt(), ' '.code -> " "
                 VietnameseData.KEY_COMMA.toInt(), ','.code -> ","
@@ -608,8 +609,23 @@ class AutoWordingEngine private constructor() {
                 clearCandidates()
                 return null
             }
+
+            if (isSpaceKey && wordStartOk && isEnabled && shorthandExpansionEnabled) {
+                val expanded = expandShorthand(composingWord)
+                if (expanded != null) {
+                    val replacement = expanded + breakChar
+                    val genId = nextGenerationId()
+                    if (candidateSuggestionsEnabled) {
+                        submitCandidateTaskForGeneration(genId) { computeNextWordCandidates(expanded) }
+                    } else {
+                        clearCandidates()
+                    }
+                    return Pair(composingWord.length, replacement)
+                }
+            }
+
             var corrected: String? = null
-            if (wordStartOk) {
+            if (wordStartOk && isEnabled && grammarRepairEnabled) {
                 if (dict.englishContractionGrammar.containsKey(lower)) {
                     corrected = dict.englishContractionGrammar[lower]
                 } else if (dict.englishTypoCorrections.containsKey(lower)) {
@@ -626,14 +642,27 @@ class AutoWordingEngine private constructor() {
                     corrected
                 }
                 val replacement = finalWord + breakChar
-                val nextCands = computeNextWordCandidates(finalWord)
-                updateCandidates(nextCands)
+                val genId = nextGenerationId()
+                if (isEnabled && candidateSuggestionsEnabled) {
+                    submitCandidateTaskForGeneration(genId) { computeNextWordCandidates(finalWord) }
+                } else {
+                    clearCandidates()
+                }
                 return Pair(composingWord.length, replacement)
             } else {
-                val nextCands = computeNextWordCandidates(composingWord)
-                updateCandidates(nextCands)
+                val genId = nextGenerationId()
+                if (isEnabled && candidateSuggestionsEnabled) {
+                    submitCandidateTaskForGeneration(genId) { computeNextWordCandidates(composingWord) }
+                } else {
+                    clearCandidates()
+                }
                 return null
             }
+        }
+
+        if (!isEnabled || !candidateSuggestionsEnabled) {
+            clearCandidates()
+            return null
         }
 
         if (isBackspace) {
@@ -651,18 +680,24 @@ class AutoWordingEngine private constructor() {
     }
 
     private fun updateEnglishCandidates(stem: String) {
-        val dict = VietnameseDictionary.shared
-        val cands = dict.computeEnglishCandidates(stem, 3).toMutableList()
-        if (cands.size < 3) {
-            val bridge = spellCheckerBridge?.suggest(stem, 3 - cands.size) ?: emptyList()
-            for (b in bridge) {
-                if (!cands.contains(b)) cands.add(b)
-                if (cands.size >= 3) break
+        if (!isEnabled || !candidateSuggestionsEnabled) {
+            clearCandidates()
+            return
+        }
+        val genId = nextGenerationId()
+        submitCandidateTaskForGeneration(genId) {
+            val dict = VietnameseDictionary.shared
+            val cands = dict.computeEnglishCandidates(stem, 3).toMutableList()
+            if (cands.size < 3) {
+                val bridge = spellCheckerBridge?.suggest(stem, 3 - cands.size) ?: emptyList()
+                for (b in bridge) {
+                    if (!cands.contains(b)) cands.add(b)
+                    if (cands.size >= 3) break
+                }
+            }
+            cands.take(3).mapIndexed { idx, txt ->
+                WordCandidate(id = idx, text = txt, kind = CandidateKind.STEM_COMPLETION, replaceLength = stem.length)
             }
         }
-        val wordCands = cands.take(3).mapIndexed { idx, txt ->
-            WordCandidate(id = idx, text = txt, kind = CandidateKind.STEM_COMPLETION, replaceLength = stem.length)
-        }
-        updateCandidates(wordCands)
     }
 }
