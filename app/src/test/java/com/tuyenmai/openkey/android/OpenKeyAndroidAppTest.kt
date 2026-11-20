@@ -759,7 +759,19 @@ class OpenKeyAndroidAppTest {
         assertTrue("OpenKeyImeService must wire single-fire keyCodeSender", imeText.contains("keyCodeSender = { sendDownUpKeyEvents(it) }"))
         assertTrue("OpenKeyImeService must configure Direct-Boot device-protected log file", imeText.contains("configureLogFile"))
         assertTrue("OpenKeyImeService must dispose sessionController in onDestroy", imeText.contains("sessionController.dispose()"))
-        assertTrue("SettingsActivity must apply safeDrawingPadding and imePadding for Android 15 edge-to-edge", settingsFile.readText().contains("safeDrawingPadding()") && settingsFile.readText().contains("imePadding()"))
+        assertTrue("OpenKeyImeService must implement Android 11+ inline autofill request", imeText.contains("override fun onCreateInlineSuggestionsRequest("))
+        assertTrue("OpenKeyImeService must implement Android 11+ inline autofill response", imeText.contains("override fun onInlineSuggestionsResponse("))
+        assertTrue("OpenKeyImeService must sync system IME subtype locale", imeText.contains("override fun onCurrentInputMethodSubtypeChanged("))
+
+        val methodXmlFile = listOf(
+            File("src/main/res/xml/method.xml"),
+            File("app/src/main/res/xml/method.xml")
+        ).first { it.exists() }
+        assertTrue("method.xml must declare supportsInlineSuggestions=\"true\"", methodXmlFile.readText().contains("android:supportsInlineSuggestions=\"true\""))
+
+        val settingsText = settingsFile.readText()
+        assertTrue("SettingsActivity must apply safeDrawingPadding and imePadding for Android 15 edge-to-edge", settingsText.contains("safeDrawingPadding()") && settingsText.contains("imePadding()"))
+        assertTrue("SettingsActivity must expose standaloneWEnabled, quickTelexEnabled, and quickConsonantEnabled", settingsText.contains("standaloneWEnabled") && settingsText.contains("quickTelexEnabled") && settingsText.contains("quickConsonantEnabled"))
         assertTrue("KeyboardScreen must honor WindowInsets.navigationBars for 3-button nav safety", screenText.contains("WindowInsets.navigationBars"))
     }
 }

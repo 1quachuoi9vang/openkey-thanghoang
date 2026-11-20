@@ -73,7 +73,10 @@ object OpenKeyL10n {
             "checkSpellingTitle" to "Kiểm tra chính tả",
             "restoreWrongSpellingTitle" to "Tự động khôi phục từ sai chính tả",
             "bilingualTitle" to "Khôi phục từ tiếng Anh tự động",
-            "smartSwitchTitle" to "Ghi nhớ ngôn ngữ từng ứng dụng (Smart Switch)"
+            "smartSwitchTitle" to "Ghi nhớ ngôn ngữ từng ứng dụng (Smart Switch)",
+            "standaloneWTitle" to "Gõ 'w' thành 'ư' ở đầu âm tiết",
+            "quickTelexTitle" to "Gõ tắt phụ âm kép Quick Telex (cc=ch, nn=ng, tt=th)",
+            "quickConsonantTitle" to "Gõ tắt phụ âm đầu/cuối (f=ph, j=gi, w=qu; g=ng, h=nh, k=ch)"
         )
 
         private val en = mapOf(
@@ -85,7 +88,10 @@ object OpenKeyL10n {
             "checkSpellingTitle" to "Check Spelling",
             "restoreWrongSpellingTitle" to "Auto-restore Wrong Spelling",
             "bilingualTitle" to "Bilingual English Auto-restore",
-            "smartSwitchTitle" to "Per-app Language Memory (Smart Switch)"
+            "smartSwitchTitle" to "Per-app Language Memory (Smart Switch)",
+            "standaloneWTitle" to "Type 'w' as 'ư' at syllable start",
+            "quickTelexTitle" to "Quick Telex (cc=ch, gg=gi, kk=kh, nn=ng, qq=qu, pp=ph, tt=th)",
+            "quickConsonantTitle" to "Quick Consonants (f=ph, j=gi, w=qu; g=ng, h=nh, k=ch)"
         )
 
         override fun getStrings(lang: Language): Map<String, String> = if (lang == Language.VI) vi else en

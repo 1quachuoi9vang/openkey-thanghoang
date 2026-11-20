@@ -78,6 +78,7 @@ fun KeyboardScreen(
     autoWordingEngine: AutoWordingEngine,
     sessionController: KeyboardSessionController? = null,
     enterActionLabel: String = "↵",
+    inlineSuggestionViews: List<android.view.View> = emptyList(),
     onOpenSettings: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -258,7 +259,7 @@ fun KeyboardScreen(
             .background(Color(palette.backgroundColor))
     ) {
         // Candidate Strip / Top Toolbar (42dp scaled) isolated from Key Grid recomposition (REQ-014, REQ-025)
-        if (!editorUiState.isNumericField) {
+        if (!editorUiState.isNumericField || inlineSuggestionViews.isNotEmpty()) {
             LiveCandidateStripHost(
                 autoWordingEngine = autoWordingEngine,
                 heightDp = metrics.candidateStripHeightDp,
@@ -266,6 +267,7 @@ fun KeyboardScreen(
                 language = effectiveLanguage,
                 inputType = inputType,
                 oneHandedMode = metrics.effectiveOneHandedMode,
+                inlineSuggestionViews = inlineSuggestionViews,
                 onCandidateSelected = handleCandidateSelected,
                 onLanguageToggled = {
                     controller.onKeyAction(KeyAction.SwitchLanguage)
@@ -503,6 +505,7 @@ private fun LiveCandidateStripHost(
     language: Int,
     inputType: Int,
     oneHandedMode: OneHandedMode,
+    inlineSuggestionViews: List<android.view.View> = emptyList(),
     onCandidateSelected: (WordCandidate) -> Unit,
     onLanguageToggled: () -> Unit,
     onInputTypeToggled: () -> Unit,
@@ -536,6 +539,7 @@ private fun LiveCandidateStripHost(
         language = language,
         inputType = inputType,
         oneHandedMode = oneHandedMode,
+        inlineSuggestionViews = inlineSuggestionViews,
         onCandidateSelected = onCandidateSelected,
         onLanguageToggled = onLanguageToggled,
         onInputTypeToggled = onInputTypeToggled,

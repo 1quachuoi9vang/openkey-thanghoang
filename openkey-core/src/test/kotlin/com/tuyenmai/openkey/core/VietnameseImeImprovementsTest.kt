@@ -53,7 +53,10 @@ class VietnameseImeImprovementsTest {
             restoreIfWrongSpelling = 1,
             fixRecommendBrowser = 1,
             useSmartSwitchKey = 1,
-            bilingualAutoRestore = 1
+            bilingualAutoRestore = 1,
+            standaloneW = 1,
+            quickTelex = 0,
+            quickConsonant = 0
         )
         AutoWordingEngine.shared.asyncCandidateExecutionEnabled = false
         AutoWordingEngine.shared.syncConfig(
@@ -372,5 +375,76 @@ class VietnameseImeImprovementsTest {
         assertTrue(gesture.resolveLongPressPopupItems(fKey).containsAll(listOf("$", "₫")))
         assertEquals(listOf("(", ")"), gesture.resolveLongPressPopupItems(lKey))
         assertEquals(KeyboardGestureController.COMMA_QUICK_ACTION_VARIANTS, gesture.resolveLongPressPopupItems(commaKey))
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 4: Laban-Style Speed-Typing Toggles (standaloneW, quickTelex, quickConsonant)
+    // -------------------------------------------------------------------------
+    @Test
+    fun `test standaloneW toggle quickTelex and quickConsonant speed typing modes`() {
+        val storage = InMemoryKeyValueStorage()
+        val store = OpenKeySettingsStore(storage)
+        assertTrue(store.standaloneWEnabled, "standaloneWEnabled must default to true")
+        assertFalse(store.quickTelexEnabled, "quickTelexEnabled must default to false")
+        assertFalse(store.quickConsonantEnabled, "quickConsonantEnabled must default to false")
+
+        val committer = BufferCommitter()
+        val controller = KeyboardSessionController(
+            settingsStore = store,
+            committer = committer,
+            autoWordingEngine = AutoWordingEngine.shared
+        )
+
+        fun typePhrase(text: String): String {
+            committer.text.setLength(0)
+            controller.onStartInput(EditorContext(packageName = "com.zalo"))
+            for (ch in text) {
+                if (ch == ' ') controller.onKeyAction(KeyAction.Space)
+                else controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+            }
+            return committer.text.toString()
+        }
+
+        // 1. standaloneWEnabled = false -> initial 'w' stays 'w', while uw/ow/aw modifiers still work
+        store.standaloneWEnabled = false
+        VietnameseEngine.syncConfig(standaloneW = 0)
+        assertEquals("w ", typePhrase("w "))
+        assertEquals("ư ", typePhrase("uw "))
+        assertEquals("ơ ", typePhrase("ow "))
+        assertEquals("trường ", typePhrase("truwowngf "))
+
+        // Restore standaloneW = 1, enable quickTelex = 1
+        store.standaloneWEnabled = true
+        store.quickTelexEnabled = true
+        VietnameseEngine.syncConfig(standaloneW = 1, quickTelex = 1, quickConsonant = 0)
+        assertEquals("chào ", typePhrase("cchaof "))
+        assertEquals("già ", typePhrase("ggaf "))
+        assertEquals("già ", typePhrase("ggiaf "))
+        assertEquals("không ", typePhrase("kkhoong "))
+        assertEquals("người ", typePhrase("nnguwowif "))
+        assertEquals("qua ", typePhrase("qqa "))
+        assertEquals("qua ", typePhrase("qqua "))
+        assertEquals("phố ", typePhrase("pphoos "))
+        assertEquals("thường ", typePhrase("ttuwowngf "))
+        assertEquals("áng ", typePhrase("anns "))
+        assertEquals("ách ", typePhrase("accs "))
+        assertEquals("tiếng ", typePhrase("tiesnn "))
+
+        // Enable quickConsonant = 1 (f=ph, j=gi, w=qu onset; g=ng, h=nh, k=ch coda)
+        store.quickTelexEnabled = false
+        store.quickConsonantEnabled = true
+        VietnameseEngine.syncConfig(standaloneW = 1, quickTelex = 0, quickConsonant = 1)
+        assertEquals("phố ", typePhrase("foos "))
+        assertEquals("giả ", typePhrase("jar "))
+        assertEquals("quá ", typePhrase("was "))
+        assertEquals("tiếng ", typePhrase("tiesg "))
+        assertEquals("tinh ", typePhrase("tih "))
+        assertEquals("sách ", typePhrase("saks "))
+
+        // System IME subtype switch: en_US -> 0, vi_VN -> 1
+        controller.onSystemSubtypeChanged("en_US")
+        assertEquals(0, controller.editorUiState.language)
+        controller.onSystemSubtypeChanged("vi_VN")
+        assertEquals(1, controller.editorUiState.language)
     }
 }

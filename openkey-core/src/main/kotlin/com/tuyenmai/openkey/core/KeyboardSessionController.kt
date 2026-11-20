@@ -76,12 +76,26 @@ class KeyboardSessionController(
             OpenKeySettingsStore.KEY_CUSTOM_SHORTHANDS -> {
                 syncAutoWordingFromSettings()
             }
+            OpenKeySettingsStore.KEY_STANDALONE_W_ENABLED,
+            OpenKeySettingsStore.KEY_QUICK_TELEX_ENABLED,
+            OpenKeySettingsStore.KEY_QUICK_CONSONANT_ENABLED -> {
+                VietnameseEngine.syncConfig(
+                    standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+                    quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+                    quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
+                )
+            }
         }
     }
 
     init {
         editorUiState = EditorUiState(language = settingsStore.language)
         syncAutoWordingFromSettings()
+        VietnameseEngine.syncConfig(
+            standaloneW = if (settingsStore.standaloneWEnabled) 1 else 0,
+            quickTelex = if (settingsStore.quickTelexEnabled) 1 else 0,
+            quickConsonant = if (settingsStore.quickConsonantEnabled) 1 else 0
+        )
         settingsStore.addListener(settingsListener)
     }
 
@@ -102,6 +116,31 @@ class KeyboardSessionController(
     fun dispose() {
         settingsStore.removeListener(settingsListener)
         uiStateListeners.clear()
+    }
+
+    /**
+     * Synchronizes active keyboard language when the user selects a system IME subtype
+     * (`vi_VN` -> 1, `en_US` -> 0) from Android's Input Method Picker.
+     */
+    fun onSystemSubtypeChanged(locale: String) {
+        val nextLang = when {
+            locale.startsWith("vi", ignoreCase = true) -> 1
+            locale.startsWith("en", ignoreCase = true) -> 0
+            else -> return
+        }
+        if (nextLang != editorUiState.language) {
+            _composingWord = ""
+            _previousWord = ""
+            _englishWordStartOk = true
+            _canDoubleSpacePeriod = false
+            VietnameseEngine.syncConfig(language = nextLang)
+            VietnameseEngine.resetSession()
+            autoWordingEngine.clearCandidates()
+            if (settingsStore.useSmartSwitchKey && editorUiState.packageName.isNotBlank()) {
+                smartSwitchStore.setAppLanguage(editorUiState.packageName, nextLang)
+            }
+            updateEditorUiState(editorUiState.copy(language = nextLang))
+        }
     }
 
     private fun applyLanguageSwitchIfRequested(snapshot: HookSnapshot) {

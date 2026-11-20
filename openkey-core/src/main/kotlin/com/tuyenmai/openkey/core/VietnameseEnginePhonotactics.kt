@@ -843,7 +843,7 @@ fun VietnameseEngineState.handleMainKey(data: UShort, caps: Boolean) {
     }
 
     if (!isChanged) {
-        if (data == KEY_W && vInputType == 0) {
+        if (data == KEY_W && vInputType == 0 && vStandaloneW != 0) {
             checkForStandaloneChar(data = data, caps = caps, keyWillReverse = KEY_U.toUInt())
         } else {
             insertKey(keyCode = data, caps = caps)
