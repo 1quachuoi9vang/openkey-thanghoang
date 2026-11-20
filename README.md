@@ -6,6 +6,8 @@
 
 OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Method Editor (IME) engineered in **Pure Kotlin 2.x + Jetpack Compose** for **modern large-screen Android phones** (`6.7"+` FHD+/QHD+ `19.5:9`–`20:9` `120Hz` displays; reference benchmark: **Samsung Galaxy A37**) with 1:1 Stock Samsung One UI 6/7 Keyboard layout parity and zero proprietary vendor SDK dependencies.
 
+> **macOS Pure Swift 6 Version (`OpenKeySwift`)**: Available at [`vinhthang/OpenKey`](https://github.com/vinhthang/OpenKey) ([Download `OpenKeySwift.dmg`](https://github.com/vinhthang/OpenKey/releases/download/v2.0.6/OpenKeySwift.dmg)).
+
 ---
 
 ## 📦 Direct APK Download & CI Runs
@@ -20,8 +22,9 @@ OpenKey Android is a 100% offline, privacy-first Vietnamese + English Input Meth
 
 - **100% Offline & Zero Network (`REQ-001`)**: Zero network permissions declared in `AndroidManifest.xml` (`android.permission.INTERNET` and `android.permission.ACCESS_NETWORK_STATE` are strictly forbidden). Direct-Boot aware (`android:directBootAware="true"`) using device-protected storage.
 - **Large-Screen Ergonomics & One UI Geometry**: Precision keycap and gap metrics matching Samsung One UI 6/7 Keyboard for 6.7"+ 19.5:9–20:9 120Hz displays using pure Jetpack Compose (`minSdk = 29`) — runs on any Android 10+ phone.
-- **Zero-Underline Atomic Direct Replacement**: Keystroke mutations committed atomically via `deleteSurroundingText` and `commitText` with zero composing underline flicker.
-- **Bilingual Auto-Switch & Homograph Disambiguation**: Context-ordered `V` / `E` disambiguation for Telex keystroke collisions (e.g. `sex`/`sẽ`, `max`/`mã`, `six`/`sĩ`).
+- **Zero-Underline Atomic Direct Replacement**: Keystroke mutations committed atomically via `deleteSurroundingText` and `commitText` with zero composing underline flicker, UTF-16 surrogate-pair safety, single-fire `keyCodeSender` hardware dispatch, and `CAP_CHARACTERS` / `getCursorCapsMode` auto-Shift synchronization.
+- **One UI Touch Conventions**: `300ms` long-press + hold-slide-release diacritic/punctuation popups, `350ms` double-tap `CapsLock`, spacebar cursor trackpad, backspace swipe-delete, and Globe long-press IME picker.
+- **Bilingual Auto-Switch & Homograph Disambiguation**: Context-ordered `V` / `E` disambiguation for Telex keystroke collisions (e.g. `sex`/`sẽ`, `max`/`mã`, `six`/`sĩ`, `own`/`ơn`, `its`/`ít`) with configurable `bilingualAutoRestore`.
 - **Single-Source Shared Lexicon**: Canonical lexicon datasets in `shared-data/` synchronized to Kotlin corpus via `scripts/sync_shared_lexicon.py`.
 
 ---
@@ -71,7 +74,7 @@ app/build/outputs/apk/debug/app-debug.apk
 │   └── openkey-debug.keystore         # Persistent debug keystore for reproducible APK signing
 ├── openkey-core/                      # Zero-Android-dependency Pure JVM Kotlin linguistic engine
 │   ├── src/main/kotlin/               # VietnameseEngine, BilingualAutoSwitchEngine, Lexicon
-│   └── src/test/kotlin/               # 70 pure JVM unit tests (< 2s execution)
+│   └── src/test/kotlin/               # 95 pure JVM unit tests (~5s execution)
 ├── shared-data/                       # Canonical human-readable TSV/TXT linguistic datasets
 ├── scripts/sync_shared_lexicon.py     # Shared lexicon synchronization script
 ├── scripts/setup_remote_vm.sh         # One-command Antigravity Remote Linux VM bootstrap
