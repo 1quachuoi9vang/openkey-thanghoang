@@ -445,15 +445,19 @@ class VietnameseEngineState {
     fun checkLiveMidWordAutoEscape(keyCode: UShort): Boolean {
         if (vInputType != 0 || vBilingualAutoRestore == 0) return false
 
-        // 1. Double-Consonant rr/ff/ss + Vowel Live Mid-Word Restoration
-        // ("correct", "error", "errors", "sorry", "current", "office", "coffee", "message", "issue")
+        // 1. Double-Consonant rr/ff/ss + Letter Live Mid-Word Restoration
+        // ("correct", "error", "office", "offset", "offline", "offload", "offshore", "passport", "message")
         if (tempDisableKey && droppedKeys.isNotEmpty() && rawStateIndex >= 4) {
-            if (keyCode == KEY_A || keyCode == KEY_E || keyCode == KEY_I || keyCode == KEY_O || keyCode == KEY_U || keyCode == KEY_Y) {
+            val isAlphaContinuation = !VietnameseData.isNumberKey(keyCode) &&
+                    !charKeyCode.contains(keyCode) &&
+                    keyCode != KEY_SPACE &&
+                    keyCode != KEY_DELETE
+            if (isAlphaContinuation) {
                 val rawBeforeLen = rawStateIndex - 1
                 if (rawBeforeLen >= 2) {
                     val c1 = (rawKeyStates[rawBeforeLen - 1] and CHAR_MASK).toUShort()
                     val c2 = (rawKeyStates[rawBeforeLen - 2] and CHAR_MASK).toUShort()
-                    if (c1 == c2 && (c1 == KEY_R || c1 == KEY_F || c1 == KEY_S || c1 == KEY_J || c1 == KEY_X)) {
+                    if (c1 == c2 && keyCode != c1 && (c1 == KEY_R || c1 == KEY_F || c1 == KEY_S || c1 == KEY_J || c1 == KEY_X)) {
                         val sb = StringBuilder()
                         for (i in 0 until rawBeforeLen) {
                             val c = VietnameseData.keyCodeToCharacter(rawKeyStates[i])

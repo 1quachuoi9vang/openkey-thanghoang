@@ -211,8 +211,9 @@ class VietnameseDictionary private constructor() {
         for (word in rawSyllables) {
             val stem = stripVietnameseDiacritics(word)
             stems.getOrPut(stem) { mutableListOf() }.add(word)
-            val sig = stem.toCharArray().sorted().joinToString("")
-            signatures.getOrPut(sig) { mutableListOf() }.add(word)
+            val arr = stem.toCharArray()
+            java.util.Arrays.sort(arr)
+            signatures.getOrPut(String(arr)) { mutableListOf() }.add(word)
         }
         for ((_, list) in stems) list.sortWith(compareByDescending { priorityMap[it] ?: SpatialScoringWeights.DEFAULT_PRIORITY })
         for ((_, list) in signatures) list.sortWith(compareByDescending { priorityMap[it] ?: SpatialScoringWeights.DEFAULT_PRIORITY })
@@ -455,8 +456,8 @@ class VietnameseDictionary private constructor() {
 
     fun isValidVietnameseSyllable(word: String): Boolean {
         val lower = word.lowercase()
-        if (!isPhonotacticallyValidVietnameseSyllable(lower)) return false
-        return syllableSet.contains(lower)
+        if (!syllableSet.contains(lower)) return false
+        return isPhonotacticallyValidVietnameseSyllable(lower)
     }
 
     fun isEnglishPriorityWord(rawAscii: String): Boolean = englishPriorityWords.contains(rawAscii.lowercase())
@@ -465,6 +466,10 @@ class VietnameseDictionary private constructor() {
         if (englishWords.contains(lower)) return true
         if (lower.length < 3 || isValidVietnameseSyllable(lower) || validTelexKeys.contains(lower)) return false
         fun checkStem(s: String) = englishWords.contains(s) || (s.length >= 3 && s[s.length - 1] == s[s.length - 2] && englishWords.contains(s.dropLast(1)))
+        if ((lower.endsWith("ness") || lower.endsWith("less")) && lower.length > 6) {
+            val stem = lower.dropLast(4)
+            if (englishWords.contains(stem) || (stem.endsWith("i") && englishWords.contains(stem.dropLast(1) + "y"))) return true
+        }
         if (lower.endsWith("ies") && lower.length > 4 && englishWords.contains(lower.dropLast(3) + "y")) return true
         if (lower.endsWith("es") && lower.length > 3 && (englishWords.contains(lower.dropLast(2)) || englishWords.contains(lower.dropLast(1)))) return true
         if (lower.endsWith("s") && !lower.endsWith("ss") && lower.length > 3 && englishWords.contains(lower.dropLast(1))) return true

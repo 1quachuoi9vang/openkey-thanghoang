@@ -19,6 +19,7 @@ internal object VietnamesePhonotacticsValidator {
     private val INVALID_RHYMES = Regex("(?<![ưứừửữự])[ơớờởỡợ]ng$|[ưứừửữự][nm]$|[iíìỉĩị]c$|[eéèẻẽẹ]c$|^(?:b|ch|c|d|đ|l|m|n|t|v)u[ểễềếệ]n$|ãu$|uổn$")
     private val LABIAL_MEDIALS = Regex("^(?:b|m|p|ph|v)(?:[oóòỏõọ][aáàảãạăắằẳẵặeéèẻẽẹ]|[uúùủũụ][êếềểễệyýỳỷỹỵâấầẩẫậ])")
     private val NHIA_CHECK = Regex("^nh[iíìỉĩị][aáàảãạ]$|^nhĩa$")
+    private val UNATTESTED_RHYMES = Regex("^(?:c|g|h|k|kh|n|ng|nh|p|t|x)[ưứừửữự][ơớờởỡợ]n$|^b[ưứừửữự][ớờởỡợ]n$|^ph[ưứừửữự][ơớờởợ]n$|^(?!khuya$).*u[yýỳỷỹỵ][aáàảãạ]$|^(?!khu[yỷỵ]u$).*u[yýỳỷỹỵ][uúùủũụ]$|^g[uúùủũụ][aáàảãạ]$|^g[uúùủũụ]n$")
     private val VALID_OE_ONSETS: Set<String> = setOf("", "ch", "h", "kh", "l", "ng", "nh", "t", "x", "gi", "qu")
 
     val VALID_VIETNAMESE_ONSETS: Set<String> = setOf(
@@ -47,7 +48,7 @@ internal object VietnamesePhonotacticsValidator {
         if (GH_NGH_INVALID.containsMatchIn(lower) || G_NG_INVALID.containsMatchIn(lower)) return false
         if (K_INVALID.containsMatchIn(lower) || C_INVALID.containsMatchIn(lower)) return false
         if (YE_INVALID.containsMatchIn(lower) || INVALID_RHYMES.containsMatchIn(lower) || LABIAL_MEDIALS.containsMatchIn(lower)) return false
-        if (NHIA_CHECK.containsMatchIn(lower)) return false
+        if (NHIA_CHECK.containsMatchIn(lower) || UNATTESTED_RHYMES.containsMatchIn(lower)) return false
         val lastCoda = lower.last()
         if (lastCoda == 'c' || lastCoda == 'p' || lastCoda == 't' || lower.endsWith("ch")) {
             if (!lower.any { it in "áắấéếíóốớúứýạặậẹệịọộợụựỵ" }) return false

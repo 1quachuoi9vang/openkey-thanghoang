@@ -204,4 +204,106 @@ class VietnameseImeImprovementsTest {
             "Disposed KeyboardSessionController must not receive further settingsStore listener callbacks"
         )
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.1: Mid-Word Double-Consonant + Consonant Escape & -ness/-less Morphology
+    // -------------------------------------------------------------------------
+    @Test
+    fun `test bilingual mid-word consonant escape and ness less morphology`() {
+        val committer = BufferCommitter()
+        val controller = KeyboardSessionController(
+            committer = committer,
+            autoWordingEngine = AutoWordingEngine.shared
+        )
+        controller.onStartInput(EditorContext(packageName = "com.chrome"))
+
+        val cases = listOf(
+            "offset " to "offset ",
+            "offline " to "offline ",
+            "offload " to "offload ",
+            "offshore " to "offshore ",
+            "passport " to "passport ",
+            "awareness " to "awareness ",
+            "politeness " to "politeness ",
+            "happiness " to "happiness ",
+            "homeless " to "homeless ",
+            "priceless " to "priceless "
+        )
+
+        for ((typed, expected) in cases) {
+            committer.text.setLength(0)
+            controller.onStartInput(EditorContext(packageName = "com.chrome"))
+            for (ch in typed) {
+                if (ch == ' ') controller.onKeyAction(KeyAction.Space)
+                else controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+            }
+            assertEquals(expected, committer.text.toString(), "Typing '$typed' in VI Telex mode must output '$expected'")
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 2.2: Pruned Combinatorial Non-Words, Priority Ranking & Conversational Bigrams
+    // -------------------------------------------------------------------------
+    @Test
+    fun `test pruned fake syllables spatial repair stem priorities and conversational bigrams`() {
+        val dict = VietnameseDictionary.shared
+
+        // 1. Unattested combinatorial non-words must not be accepted as valid Vietnamese syllables
+        for (fake in listOf("duỳa", "nhuỵu", "gụa", "cườn", "gun", "gún")) {
+            assertFalse(dict.isValidVietnameseSyllable(fake), "'$fake' must be rejected as an unattested non-word")
+        }
+
+        // 2. Live typing: "guns " stays "guns " (not "gún "), and "cuownf " repairs to "cường " (not "cườn ")
+        val committer = BufferCommitter()
+        val controller = KeyboardSessionController(
+            committer = committer,
+            autoWordingEngine = AutoWordingEngine.shared
+        )
+        controller.onStartInput(EditorContext(packageName = "com.zalo"))
+        for (ch in "guns ") {
+            if (ch == ' ') controller.onKeyAction(KeyAction.Space)
+            else controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        assertEquals("guns ", committer.text.toString(), "'guns ' must restore to English 'guns ' instead of fake 'gún '")
+
+        committer.text.setLength(0)
+        controller.onStartInput(EditorContext(packageName = "com.zalo"))
+        for (ch in "cuownf ") {
+            if (ch == ' ') controller.onKeyAction(KeyAction.Space)
+            else controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        assertEquals("vườn ", committer.text.toString(), "'cuownf ' must repair to real 'vườn ' (c/v neighbor) instead of fake 'cườn '")
+        assertTrue(
+            dict.findVietnameseSpatialCandidates("cuownf", "cườn", limit = 6).contains("cường"),
+            "Spatial candidates for 'cuownf' must include 'cường'"
+        )
+        assertEquals(
+            "cường",
+            dict.findVietnameseSpatialCandidates("cuownf", "cườn", previousWord = "tăng", limit = 3).firstOrNull(),
+            "Contextual spatial candidate for 'cuownf' after 'tăng' must rank 'cường' #1"
+        )
+
+        committer.text.setLength(0)
+        controller.onStartInput(EditorContext(packageName = "com.zalo"))
+        for (ch in "tawng cuownf ") {
+            if (ch == ' ') controller.onKeyAction(KeyAction.Space)
+            else controller.onKeyAction(KeyAction.CommitChar(ch.toString()))
+        }
+        assertEquals("tăng cường ", committer.text.toString(), "'tawng cuownf ' must repair contextually to 'tăng cường '")
+
+        // 3. Top-3 stem priority ranking for high-frequency Vietnamese stems
+        assertTrue(dict.stemToWords["anh"].orEmpty().take(3).contains("ảnh"), "Top 3 for 'anh' must include 'ảnh'")
+        assertTrue(dict.stemToWords["nam"].orEmpty().take(3).contains("nằm"), "Top 3 for 'nam' must include 'nằm'")
+        assertTrue(dict.stemToWords["truong"].orEmpty().take(3).contains("trưởng"), "Top 3 for 'truong' must include 'trưởng'")
+        assertTrue(dict.stemToWords["cong"].orEmpty().take(3).contains("cộng"), "Top 3 for 'cong' must include 'cộng'")
+
+        // 4. Conversational compound bigrams
+        assertTrue(dict.compoundBigrams["cảm"].orEmpty().take(3).contains("ơn"), "Next-word for 'cảm' must include 'ơn'")
+        assertTrue(dict.compoundBigrams["xin"].orEmpty().take(3).contains("chào"), "Next-word for 'xin' must include 'chào'")
+        assertTrue(dict.compoundBigrams["hôm"].orEmpty().take(3).contains("nay"), "Next-word for 'hôm' must include 'nay'")
+        assertTrue(dict.compoundBigrams["chúc"].orEmpty().take(3).contains("mừng"), "Next-word for 'chúc' must include 'mừng'")
+        assertTrue(dict.compoundBigrams["việt"].orEmpty().take(3).contains("nam"), "Next-word for 'việt' must include 'nam'")
+        val khongTop3 = dict.compoundBigrams["không"].orEmpty().take(3)
+        assertTrue(khongTop3.contains("có") && khongTop3.contains("thể"), "Top 3 next-words for 'không' must prioritize 'có' and 'thể', got $khongTop3")
+    }
 }
