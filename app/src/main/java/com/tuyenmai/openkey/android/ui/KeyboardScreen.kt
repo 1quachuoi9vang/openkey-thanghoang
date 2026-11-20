@@ -149,9 +149,14 @@ fun KeyboardScreen(
     var isCapsLock by remember { mutableStateOf(false) }
     var lastShiftTapMs by remember { mutableLongStateOf(0L) }
 
-    LaunchedEffect(editorUiState.isAutoShifted, editorUiState.capsSyncSeq) {
+    LaunchedEffect(editorUiState.packageName, editorUiState.isNumericField) {
+        currentLayer = KeyboardLayer.QWERTY
+        isCapsLock = false
+    }
+
+    LaunchedEffect(editorUiState.isAutoShifted, editorUiState.isAllCapsField, editorUiState.capsSyncSeq) {
         if (!isCapsLock) {
-            isShifted = editorUiState.isAutoShifted
+            isShifted = editorUiState.isAutoShifted || editorUiState.isAllCapsField
         }
     }
 
@@ -178,9 +183,30 @@ fun KeyboardScreen(
     val handleKeyAction: (KeyAction, KeyModel) -> Unit = { action, keyModel ->
         when (action) {
             is KeyAction.CommitChar -> {
-                controller.onKeyAction(action)
-                if (controller.shouldClearShiftAfterCommitChar(isShifted = isShifted, isCapsLocked = isCapsLock)) {
-                    isShifted = false
+                when (action.char) {
+                    KeyboardGestureController.QUICK_ACTION_SETTINGS -> {
+                        onOpenSettings()
+                    }
+                    KeyboardGestureController.QUICK_ACTION_ONE_HANDED -> {
+                        val nextMode = when (oneHandedMode) {
+                            OneHandedMode.OFF -> OneHandedMode.LEFT
+                            OneHandedMode.LEFT -> OneHandedMode.RIGHT
+                            OneHandedMode.RIGHT -> OneHandedMode.OFF
+                        }
+                        settingsStore.oneHandedMode = nextMode
+                    }
+                    else -> {
+                        val effectiveAction = if (action.char.length == 1 && action.char[0].isLetter()) {
+                            val liveChar = if (isShifted || isCapsLock) action.char.uppercase() else action.char.lowercase()
+                            if (liveChar == action.char) action else KeyAction.CommitChar(liveChar)
+                        } else {
+                            action
+                        }
+                        controller.onKeyAction(effectiveAction)
+                        if (controller.shouldClearShiftAfterCommitChar(isShifted = isShifted, isCapsLocked = isCapsLock)) {
+                            isShifted = false
+                        }
+                    }
                 }
             }
             is KeyAction.Backspace,

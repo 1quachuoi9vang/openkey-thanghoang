@@ -408,6 +408,8 @@ fun KeyButton(
     val cornerRadiusPx = with(density) { cornerRadius.toPx() }
     val variantItemWidthPx = with(density) { 36.dp.toPx() }
     val longPressMoveSlopPx = with(density) { 12.dp.toPx() }
+    val previewPopupOffsetY = with(density) { (-56).dp.roundToPx() }
+    val variantsPopupOffsetY = with(density) { (-48).dp.roundToPx() }
 
     Box(
         modifier = modifier
@@ -417,6 +419,7 @@ fun KeyButton(
                     val down = awaitFirstDown(requireUnconsumed = false)
                     isPressed = true
                     val downX = down.position.x
+                    val downY = down.position.y
                     selectedVariantIndex = 0
 
                     if (currentHaptics) {
@@ -427,8 +430,12 @@ fun KeyButton(
                     var repeatDeleteJob: Job? = null
                     var longPressHandled = false
                     var didRepeatDelete = false
+                    var tapCancelled = false
+                    var rolloverToken = -1L
+                    val isRolloverCharKey = !currentKey.isFunctional && currentKey.action is KeyAction.CommitChar
+                    val capturedAction = currentKey.action
 
-                    when (currentKey.action) {
+                    when (capturedAction) {
                         is KeyAction.Space -> {
                             gestureController.onSpacebarDown()
                             spacebarTrackpadLabel = null
@@ -436,15 +443,30 @@ fun KeyButton(
                         is KeyAction.Backspace -> {
                             gestureController.onBackspaceDown()
                             repeatDeleteJob = scope.launch {
+                                var repeatTick = 0
                                 delay(400L)
                                 while (isActive) {
                                     didRepeatDelete = true
-                                    currentOnKeyPressed(KeyAction.Backspace)
-                                    delay(50L)
+                                    repeatTick++
+                                    if (gestureController.resolveBackspaceRepeatAction(repeatTick) is GestureAction.DeletePreviousWord) {
+                                        currentOnDeleteWord()
+                                        delay(110L)
+                                    } else {
+                                        currentOnKeyPressed(KeyAction.Backspace)
+                                        delay(50L)
+                                    }
                                 }
                             }
                         }
                         else -> {
+                            if (isRolloverCharKey) {
+                                rolloverToken = gestureController.onCharacterKeyDown(currentKey.primaryLabel) {
+                                    longPressJob?.cancel()
+                                    if (!longPressHandled && !tapCancelled) {
+                                        currentOnKeyPressed(capturedAction)
+                                    }
+                                }
+                            }
                             longPressJob = scope.launch {
                                 delay(KeyboardGestureController.LONG_PRESS_TIMEOUT_MS)
                                 if (currentKey.action is KeyAction.SwitchLanguage) {
@@ -457,6 +479,9 @@ fun KeyButton(
                                 } else {
                                     val variants = gestureController.resolveLongPressPopupItems(currentKey)
                                     if (variants.isNotEmpty()) {
+                                        if (rolloverToken != -1L) {
+                                            gestureController.markCharacterLongPressConsumed(rolloverToken)
+                                        }
                                         if (currentHaptics) {
                                             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                                         }
@@ -489,10 +514,11 @@ fun KeyButton(
                                 )
                             } else {
                                 val dragDeltaX = change.positionChange().x
-                                if (dragDeltaX != 0f) {
+                                val dragDeltaY = change.positionChange().y
+                                if (dragDeltaX != 0f || dragDeltaY != 0f) {
                                     val deltaDp = with(density) { dragDeltaX.toDp().value }
 
-                                    when (currentKey.action) {
+                                    when (capturedAction) {
                                         is KeyAction.Space -> {
                                             val actions = gestureController.onSpacebarDrag(deltaDp)
                                             if (gestureController.isTrackpadActive) {
@@ -516,8 +542,23 @@ fun KeyButton(
                                             }
                                         }
                                         else -> {
-                                            if (kotlin.math.abs(change.position.x - downX) > longPressMoveSlopPx) {
+                                            if (kotlin.math.abs(change.position.x - downX) > longPressMoveSlopPx ||
+                                                kotlin.math.abs(change.position.y - downY) > longPressMoveSlopPx
+                                            ) {
                                                 longPressJob?.cancel()
+                                            }
+                                            if (!tapCancelled && gestureController.shouldCancelTapOnDragOut(
+                                                    offsetX = change.position.x,
+                                                    offsetY = change.position.y,
+                                                    keyWidthPx = size.width.toFloat(),
+                                                    keyHeightPx = size.height.toFloat()
+                                                )
+                                            ) {
+                                                tapCancelled = true
+                                                isPressed = false
+                                                if (rolloverToken != -1L) {
+                                                    gestureController.cancelCharacterKey(rolloverToken)
+                                                }
                                             }
                                         }
                                     }
@@ -532,7 +573,7 @@ fun KeyButton(
                         spacebarTrackpadLabel = null
                     }
 
-                    when (currentKey.action) {
+                    when (capturedAction) {
                         is KeyAction.Space -> {
                             val result = gestureController.onSpacebarUp()
                             spacebarTrackpadLabel = null
@@ -554,8 +595,16 @@ fun KeyButton(
                                 if (chosen != null) {
                                     currentOnKeyPressed(KeyAction.CommitChar(chosen))
                                 }
-                            } else if (!longPressHandled) {
-                                currentOnKeyPressed(currentKey.action)
+                            } else if (!longPressHandled && !tapCancelled) {
+                                if (isRolloverCharKey) {
+                                    if (gestureController.onCharacterKeyUp(rolloverToken)) {
+                                        currentOnKeyPressed(capturedAction)
+                                    }
+                                } else {
+                                    currentOnKeyPressed(capturedAction)
+                                }
+                            } else if (rolloverToken != -1L) {
+                                gestureController.cancelCharacterKey(rolloverToken)
                             }
                         }
                     }
@@ -681,7 +730,7 @@ fun KeyButton(
         if (isPressed && keyPopupPreviewEnabled && !currentKey.isFunctional && currentKey.primaryLabel.length == 1) {
             Popup(
                 alignment = Alignment.TopCenter,
-                offset = IntOffset(0, -140),
+                offset = IntOffset(0, previewPopupOffsetY),
                 properties = PopupProperties(focusable = false)
             ) {
                 Surface(
@@ -709,7 +758,7 @@ fun KeyButton(
         if (showVariantsPopup && variantOptions.isNotEmpty()) {
             Popup(
                 alignment = Alignment.TopCenter,
-                offset = IntOffset(0, -120),
+                offset = IntOffset(0, variantsPopupOffsetY),
                 onDismissRequest = { showVariantsPopup = false }
             ) {
                 Surface(

@@ -27,8 +27,22 @@ class KeyboardGestureController {
         const val SPACEBAR_TRACKPAD_ACTIVATION_DP = 10f
         const val SPACEBAR_STEP_DP = 12f
         const val BACKSPACE_WORD_DELETE_STEP_DP = 24f
+        const val BACKSPACE_WORD_REPEAT_START_TICK = 16
+        const val QUICK_ACTION_SETTINGS = "⚙"
+        const val QUICK_ACTION_ONE_HANDED = "◧"
         val DOT_PUNCTUATION_VARIANTS = listOf("?", "!", ",", "@", "/", ":")
+        val COMMA_QUICK_ACTION_VARIANTS = listOf(QUICK_ACTION_SETTINGS, QUICK_ACTION_ONE_HANDED)
+        val CURRENCY_VARIANTS = listOf("₫", "€", "£", "¥", "¢")
     }
+
+    private class HeldKeyEntry(
+        val token: Long,
+        val flushCallback: () -> Unit,
+        var flushedOrConsumed: Boolean = false
+    )
+
+    private var nextRolloverToken: Long = 1L
+    private var activeHeldKey: HeldKeyEntry? = null
 
     var isTrackpadActive: Boolean = false
         private set
@@ -40,7 +54,83 @@ class KeyboardGestureController {
     private var backspaceAccumulatorX: Float = 0f
     private var emittedWordDeletes: Int = 0
 
+    /**
+     * Registers a character key DOWN event. If a previous character key is still held
+     * and has not been consumed by long-press or cancelled, flushes it immediately so
+     * fast two-thumb overlapping chords commit in exact DOWN order (120Hz rollover).
+     */
+    fun onCharacterKeyDown(label: String, onPreemptFlush: () -> Unit): Long {
+        val prev = activeHeldKey
+        if (prev != null && !prev.flushedOrConsumed) {
+            prev.flushedOrConsumed = true
+            prev.flushCallback()
+        }
+        val token = nextRolloverToken++
+        activeHeldKey = HeldKeyEntry(token = token, flushCallback = onPreemptFlush)
+        return token
+    }
+
+    fun markCharacterLongPressConsumed(token: Long) {
+        val held = activeHeldKey
+        if (held != null && held.token == token) {
+            held.flushedOrConsumed = true
+        }
+    }
+
+    fun cancelCharacterKey(token: Long) {
+        val held = activeHeldKey
+        if (held != null && held.token == token) {
+            held.flushedOrConsumed = true
+            activeHeldKey = null
+        }
+    }
+
+    /**
+     * Returns true if the caller should commit the key on UP, or false if the key was
+     * already committed via rollover preemption, consumed by long-press, or cancelled.
+     */
+    fun onCharacterKeyUp(token: Long): Boolean {
+        val held = activeHeldKey
+        if (held != null && held.token == token) {
+            activeHeldKey = null
+            if (!held.flushedOrConsumed) {
+                held.flushedOrConsumed = true
+                return true
+            }
+            return false
+        }
+        return false
+    }
+
+    fun shouldCancelTapOnDragOut(
+        offsetX: Float,
+        offsetY: Float,
+        keyWidthPx: Float,
+        keyHeightPx: Float
+    ): Boolean {
+        if (keyWidthPx <= 0f || keyHeightPx <= 0f) return false
+        val minX = -0.75f * keyWidthPx
+        val maxX = 1.75f * keyWidthPx
+        val minY = -1.5f * keyHeightPx
+        val maxY = 2.5f * keyHeightPx
+        return offsetX < minX || offsetX > maxX || offsetY < minY || offsetY > maxY
+    }
+
+    fun resolveBackspaceRepeatAction(repeatTick: Int): GestureAction {
+        return if (repeatTick >= BACKSPACE_WORD_REPEAT_START_TICK) {
+            GestureAction.DeletePreviousWord
+        } else {
+            GestureAction.DeleteSingleChar
+        }
+    }
+
     fun onSpacebarDown() {
+        val prev = activeHeldKey
+        if (prev != null && !prev.flushedOrConsumed) {
+            prev.flushedOrConsumed = true
+            prev.flushCallback()
+            activeHeldKey = null
+        }
         isTrackpadActive = false
         spacebarAccumulatorX = 0f
         emittedSteps = 0
@@ -126,7 +216,9 @@ class KeyboardGestureController {
             'u' -> listOf("ư", "ú", "ù", "ủ", "ũ", "ụ")
             'i' -> listOf("í", "ì", "ỉ", "ĩ", "ị")
             'y' -> listOf("ý", "ỳ", "ỷ", "ỹ", "ỵ")
+            '$' -> CURRENCY_VARIANTS
             '.' -> DOT_PUNCTUATION_VARIANTS
+            ',' -> COMMA_QUICK_ACTION_VARIANTS
             else -> emptyList()
         }
 
@@ -146,6 +238,7 @@ class KeyboardGestureController {
 
     fun resolveLongPressPopupItems(key: KeyModel): List<String> {
         if (key.primaryLabel == ".") return DOT_PUNCTUATION_VARIANTS
+        if (key.primaryLabel == ",") return COMMA_QUICK_ACTION_VARIANTS
         if (key.primaryLabel.length == 1) {
             val variants = resolveLongPressVariants(key.primaryLabel[0])
             val secondary = key.secondaryLabel
@@ -153,7 +246,11 @@ class KeyboardGestureController {
                 return if (!secondary.isNullOrEmpty()) listOf(secondary) + variants else variants
             }
             if (!key.isFunctional && !secondary.isNullOrEmpty()) {
-                return listOf(secondary)
+                return when (secondary) {
+                    "$" -> listOf("$", "₫")
+                    "(" -> listOf("(", ")")
+                    else -> listOf(secondary)
+                }
             }
         }
         return emptyList()

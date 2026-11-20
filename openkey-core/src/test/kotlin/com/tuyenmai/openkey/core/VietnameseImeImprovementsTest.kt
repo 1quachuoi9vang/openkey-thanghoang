@@ -306,4 +306,71 @@ class VietnameseImeImprovementsTest {
         val khongTop3 = dict.compoundBigrams["không"].orEmpty().take(3)
         assertTrue(khongTop3.contains("có") && khongTop3.contains("thể"), "Top 3 next-words for 'không' must prioritize 'có' and 'thể', got $khongTop3")
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 3.1: 120Hz Two-Thumb Rollover, Slide-Out Cancel & Accelerated Backspace
+    // -------------------------------------------------------------------------
+    @Test
+    fun `test two-thumb touch rollover flushes held key in down order without duplicate commit`() {
+        val gesture = KeyboardGestureController()
+        val committed = mutableListOf<String>()
+
+        // Simulate overlapping two-thumb chord: 't' DOWN -> 'h' DOWN -> 'h' UP -> 't' UP
+        val tokenT = gesture.onCharacterKeyDown("t") { committed.add("t") }
+        val tokenH = gesture.onCharacterKeyDown("h") { committed.add("h") }
+        assertEquals(listOf("t"), committed, "Pressing 'h' while 't' is held must immediately flush 't'")
+
+        if (gesture.onCharacterKeyUp(tokenH)) {
+            committed.add("h")
+        }
+        if (gesture.onCharacterKeyUp(tokenT)) {
+            committed.add("t")
+        }
+        assertEquals(listOf("t", "h"), committed, "Releasing 'h' then 't' must yield 'th' with zero duplicate 't'")
+
+        // Verify long-press consumption prevents rollover flush
+        committed.clear()
+        val tokenA = gesture.onCharacterKeyDown("a") { committed.add("a") }
+        gesture.markCharacterLongPressConsumed(tokenA)
+        val tokenN = gesture.onCharacterKeyDown("n") { committed.add("n") }
+        assertTrue(committed.isEmpty(), "Long-press-consumed key must not flush raw base char on next key down")
+        assertFalse(gesture.onCharacterKeyUp(tokenA))
+        assertTrue(gesture.onCharacterKeyUp(tokenN))
+
+        // Slide-out cancel bounds
+        assertFalse(gesture.shouldCancelTapOnDragOut(offsetX = 40f, offsetY = 50f, keyWidthPx = 90f, keyHeightPx = 110f))
+        assertTrue(gesture.shouldCancelTapOnDragOut(offsetX = 40f, offsetY = -200f, keyWidthPx = 90f, keyHeightPx = 110f))
+
+        // Accelerated Backspace repeat escalation
+        assertEquals(GestureAction.DeleteSingleChar, gesture.resolveBackspaceRepeatAction(1))
+        assertEquals(GestureAction.DeleteSingleChar, gesture.resolveBackspaceRepeatAction(15))
+        assertEquals(GestureAction.DeletePreviousWord, gesture.resolveBackspaceRepeatAction(16))
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 3.2: Vietnamese Đồng (₫), Paired ')' Variant & Comma Quick-Actions
+    // -------------------------------------------------------------------------
+    @Test
+    fun `test Vietnamese Dong symbol paired parenthesis and comma quick action variants`() {
+        val gesture = KeyboardGestureController()
+
+        // 1. SYMBOLS_2 contains ₫
+        val sym2 = KeyboardLayoutDefinition.getLayer(KeyboardLayer.SYMBOLS_2)
+        val sym2Labels = sym2.rows.flatMap { r -> r.keys.map { it.primaryLabel } }
+        assertTrue(sym2Labels.contains("₫"), "SYMBOLS_2 layer must contain Vietnamese Đồng symbol '₫'")
+
+        // 2. '$' long-press variants include '₫', while 'd' remains strictly ["đ"]
+        assertEquals(listOf("đ"), gesture.resolveLongPressVariants('d'))
+        assertTrue(gesture.resolveLongPressVariants('$').contains("₫"), "'$' long-press variants must include '₫'")
+
+        // 3. QWERTY 'f' ($ sublabel) popup includes '$' and '₫', and QWERTY 'l' (( sublabel) includes '(' and ')'
+        val qwerty = KeyboardLayoutDefinition.getLayer(KeyboardLayer.QWERTY, isShifted = false, language = 1, imeActionLabel = "↵")
+        val fKey = qwerty.rows[2].keys.first { it.primaryLabel == "f" }
+        val lKey = qwerty.rows[2].keys.first { it.primaryLabel == "l" }
+        val commaKey = qwerty.rows[4].keys.first { it.primaryLabel == "," }
+
+        assertTrue(gesture.resolveLongPressPopupItems(fKey).containsAll(listOf("$", "₫")))
+        assertEquals(listOf("(", ")"), gesture.resolveLongPressPopupItems(lKey))
+        assertEquals(KeyboardGestureController.COMMA_QUICK_ACTION_VARIANTS, gesture.resolveLongPressPopupItems(commaKey))
+    }
 }
