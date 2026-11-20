@@ -340,6 +340,13 @@ class VietnameseImeImprovementsTest {
         assertFalse(gesture.onCharacterKeyUp(tokenA))
         assertTrue(gesture.onCharacterKeyUp(tokenN))
 
+        // Verify Enter / Backspace chords flush held character key before action
+        committed.clear()
+        val tokenK = gesture.onCharacterKeyDown("k") { committed.add("k") }
+        gesture.flushPendingCharacterKey()
+        assertEquals(listOf("k"), committed, "Enter/Layer chord must flush held character key before submitting")
+        assertFalse(gesture.onCharacterKeyUp(tokenK))
+
         // Slide-out cancel bounds
         assertFalse(gesture.shouldCancelTapOnDragOut(offsetX = 40f, offsetY = 50f, keyWidthPx = 90f, keyHeightPx = 110f))
         assertTrue(gesture.shouldCancelTapOnDragOut(offsetX = 40f, offsetY = -200f, keyWidthPx = 90f, keyHeightPx = 110f))

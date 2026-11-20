@@ -54,17 +54,22 @@ class KeyboardGestureController {
     private var backspaceAccumulatorX: Float = 0f
     private var emittedWordDeletes: Int = 0
 
+    fun flushPendingCharacterKey() {
+        val prev = activeHeldKey
+        if (prev != null && !prev.flushedOrConsumed) {
+            prev.flushedOrConsumed = true
+            activeHeldKey = null
+            prev.flushCallback()
+        }
+    }
+
     /**
      * Registers a character key DOWN event. If a previous character key is still held
      * and has not been consumed by long-press or cancelled, flushes it immediately so
      * fast two-thumb overlapping chords commit in exact DOWN order (120Hz rollover).
      */
     fun onCharacterKeyDown(label: String, onPreemptFlush: () -> Unit): Long {
-        val prev = activeHeldKey
-        if (prev != null && !prev.flushedOrConsumed) {
-            prev.flushedOrConsumed = true
-            prev.flushCallback()
-        }
+        flushPendingCharacterKey()
         val token = nextRolloverToken++
         activeHeldKey = HeldKeyEntry(token = token, flushCallback = onPreemptFlush)
         return token
@@ -125,12 +130,7 @@ class KeyboardGestureController {
     }
 
     fun onSpacebarDown() {
-        val prev = activeHeldKey
-        if (prev != null && !prev.flushedOrConsumed) {
-            prev.flushedOrConsumed = true
-            prev.flushCallback()
-            activeHeldKey = null
-        }
+        flushPendingCharacterKey()
         isTrackpadActive = false
         spacebarAccumulatorX = 0f
         emittedSteps = 0
@@ -173,6 +173,7 @@ class KeyboardGestureController {
     }
 
     fun onBackspaceDown() {
+        flushPendingCharacterKey()
         isSwipeDeleteActive = false
         backspaceAccumulatorX = 0f
         emittedWordDeletes = 0

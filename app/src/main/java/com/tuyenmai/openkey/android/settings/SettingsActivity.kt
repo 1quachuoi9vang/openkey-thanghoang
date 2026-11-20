@@ -81,11 +81,7 @@ class SettingsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val dpContext = try {
-            createDeviceProtectedStorageContext() ?: this
-        } catch (_: Exception) {
-            this
-        }
+        val dpContext = createDeviceProtectedStorageContext() ?: this
         val baseCacheDir = dpContext.cacheDir ?: cacheDir
         if (baseCacheDir != null) {
             OpenKeyLogger.shared.configureLogFile(File(baseCacheDir, "OpenKeyAndroid/openkey-debug.log"))

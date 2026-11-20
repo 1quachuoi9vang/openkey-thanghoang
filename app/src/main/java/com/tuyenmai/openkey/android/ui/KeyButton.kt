@@ -466,6 +466,8 @@ fun KeyButton(
                                         currentOnKeyPressed(capturedAction)
                                     }
                                 }
+                            } else if (capturedAction !is KeyAction.Shift) {
+                                gestureController.flushPendingCharacterKey()
                             }
                             longPressJob = scope.launch {
                                 delay(KeyboardGestureController.LONG_PRESS_TIMEOUT_MS)
